@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mainMenu>
+	<menuBar>
+
+	<!-- Cerebro menu. -->  
+
+	<subMenu id="cerebro_menu">
+	<insertBefore>help_menu</insertBefore>
+	<label>Cerebro</label>
+	
+		<scriptItem id="cerebro_todo">
+			<label>Todo list</label>
+			<scriptCode><![CDATA[from tentaculo.api import menu; menu.todolist()]]></scriptCode>
+		</scriptItem>
+		
+		<scriptItem id="cerebro_link">
+			<label>Link/Embed</label>
+			<scriptCode><![CDATA[from tentaculo.api import menu; menu.browser()]]></scriptCode>
+		</scriptItem>
+
+    <scriptItem id="cerebro_report">
+      <label>Save as version</label>
+      <scriptCode><![CDATA[from tentaculo.api import menu; menu.createreport()]]></scriptCode>
+    </scriptItem>
+
+    <scriptItem id="cerebro_publish">
+      <label>Publish</label>
+      <scriptCode><![CDATA[from tentaculo.api import menu; menu.publish()]]></scriptCode>
+    </scriptItem>
+				
+		<separatorItem/>
+		
+		<scriptItem id="cerebro_logout">
+			<label>Logout</label>
+			<scriptCode><![CDATA[from tentaculo.api import menu; menu.logout()]]></scriptCode>
+		</scriptItem>
+		
+		<separatorItem/>
+		
+		<scriptItem id="cerebro_workdir">
+			<label>Change working directory</label>
+			<scriptCode><![CDATA[from tentaculo.api import menu; menu.workdir()]]></scriptCode>
+		</scriptItem>
+
+    <separatorItem/>
+		
+		<scriptItem id="cerebro_about">
+			<label>About</label>
+			<scriptCode><![CDATA[from tentaculo.api import menu; menu.about()]]></scriptCode>
+		</scriptItem>
+		
+		<scriptItem id="cerebro_reload">
+			<label>Reload</label>
+			<scriptCode><![CDATA[from tentaculo.api import menu; menu.reload()]]></scriptCode>
+		</scriptItem>
+		
+    </subMenu>
+	</menuBar>
+</mainMenu>

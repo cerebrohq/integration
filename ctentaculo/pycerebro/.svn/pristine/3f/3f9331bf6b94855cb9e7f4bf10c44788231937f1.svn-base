@@ -1,0 +1,129 @@
+# -*- coding: utf-8 -*-
+
+# Модуль доступа к файловому хранилищу Cargador
+"""
+Доступ к файловому хранилищу(Cargador) осуществляется по протоколу xmlrpc и http.
+Для этого используются модули xmlrpclib и httplib.
+Отступление:
+	Для того, чтобы был возможен доступ к Cargador-у по протоколу xmlrpc и http
+	необходимо настроить конфигурационный файл Cargador-а.
+	Этот файл лежит рядом с исполняемым файлом Cargador-а
+	и называется в зависимости от операционной системы
+	Windows: cargador.win.conf
+	Linux: cargador.linux.conf
+	MacOs: cargador.mac.conf
+
+	В этом конфигурационном файле нужно прописать порт на который будут происходить xmlrpc и http запросы.
+	::
+		Пример:
+			...
+			<tcpServer>
+			...
+			<httpGate>
+				<port>4080</port>
+			</httpGate>
+
+			<rpcGate>
+				<port>4040</port>
+			</rpcGate>
+			...
+			</tcpServer>
+			...
+	::
+
+	После изменения конфигурационного файла нужно перестартовать сервис Cargador-а.
+"""
+
+
+try:
+	import xmlrpc.client as xmlrpc
+except:
+	import xmlrpclib as xmlrpc
+
+import os, requests
+from .cclib import string_byte
+
+
+class Cargador(xmlrpc.ServerProxy): 
+	"""
+		Класс Cargador для доступа к файловому хранилищу Cargador.
+		
+		Here is a number of methods inherrited from XML-RPC object in Cargador class
+		::
+			statusInfo()
+			statusTables(tablesBitMaks INT, flags INT)
+			catalogResolve(hash HASH)
+			catalogDelete(hash HASH, password STR)
+			catalogUpload(hash HASH, siteList STR, CommenceFlags INT, userName STR, url STR, retryCount INT)
+			catalogDownload(hash HASH, siteList STR, CommenceFlags INT, userName STR, url STR, retryCount INT)
+			controlIO(hash HASH, TableKind INT, Action INT)
+		::
+		read documentation to invetigate methods API
+	"""	
+	
+	def __init__(self, _host, _rpc_port, _http_port):
+		
+		xmlrpc.ServerProxy.__init__(self, 'http://{0}:{1}'.format(_host, _rpc_port))
+		self.host = _host
+		self.http_port = _http_port
+
+	def import_file(self, file_name, url):
+		"""
+		Принимает на вход абсолютный путь до файла и локатор на место в хранилище (по сути папка, куда будет положен файл в файловом хранилище).
+		В качестве локатора выступает полный путь задачи в церебро, например 'Test project/Test task'
+		
+		Выполняет импорт файла в файловое хранилище по HTTP протоколу методом PUT
+		и возвращает его хеш.	
+	
+		Пример:
+		::
+			rpc = cargador.Cargador('server', 4040, 4080); # Создаем объект Cargador
+			rpc.importFile('cargador.py', 'Test Folder')) # импортируем файл в файловое хранилище Cargador
+		::
+		"""
+		c_url = '{0}{1}/{2}'.format('' if url.startswith('/') else '/', url.rstrip('/'), string_byte(os.path.basename(file_name)))
+		host = '{0}:{1}'.format(self.host, self.http_port)
+		content_lenght = '{0}'.format(os.stat(file_name).st_size)
+		headers = {
+			"User-Agent": "Python uploader",
+			"Content-type": "application/octet-stream",
+			"Accept": "text/plain",
+			"host": host,
+			"accept-encoding": "gzip, deflate",
+			"content-length": content_lenght
+		}
+
+		ret = None
+		with open(file_name, "rb") as fh:
+			response = requests.put('http://{0}{1}'.format(host, c_url), headers=headers, data=fh.read())
+			if response.status_code != 201:
+				raise RuntimeError('Attachment failed with code: ' + str(response.status_code) + '. reason: ' + response.reason)
+				
+			ret = response.content.decode('ascii').strip()
+		
+		return ret
+
+	def download_file(self, file_name, hash):
+		"""
+		Принимает на вход абсолютный путь, по которому будет производиться 
+		скачивание файла и хэш файла в хранилище.
+
+		Выполняет скачивание файла из файлового хранилища по HTTP протоколу методом GET 
+		по указанному полному пути и возвращает True при успехе.
+		"""
+		host = '{0}:{1}'.format(self.host, self.http_port)
+		headers = {
+			"User-Agent": "Python downloader",
+			"Content-type": "application/octet-stream",
+			"Accept": "text/plain",
+			"host": host,
+			"accept-encoding": "gzip, deflate",
+		}
+
+		response = requests.get('http://{0}/file?hash={1}'.format(host, hash), headers=headers, stream=True)
+		if response.status_code == 200:
+			with open(file_name, 'wb') as fh:
+				for chunk in response.iter_content(1024):
+					fh.write(chunk)
+
+		return response.status_code == 200

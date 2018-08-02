@@ -1,0 +1,5 @@
+#!/bin/bash
+
+export PYTHONPATH=$HOME/.cerebro:$HOME/.cerebro/ctentaculo:$HOME/.cerebro/ctentaculo/tentaculo:$HOME/.cerebro/ctentaculo/tentaculo/api/imaya:$HOME/.cerebro/ctentaculo/tentaculo/api/ic4d:$HOME/.cerebro/ctentaculo/tentaculo/api/ihoudini:$HOME/.cerebro/ctentaculo/tentaculo/api/inuke:$PYTHONPATH
+export NUKE_PATH=$HOME/.cerebro/ctentaculo/tentaculo/api/inuke:$NUKE_PATH
+export PATH=$HOME/.cerebro/ctentaculo/tentaculo/api/imax:$PATH

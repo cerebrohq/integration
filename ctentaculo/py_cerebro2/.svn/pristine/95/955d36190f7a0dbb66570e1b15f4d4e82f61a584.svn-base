@@ -1,0 +1,108 @@
+# -*- coding: utf-8 -*-
+
+# Модуль доступа к файловому хранилищу Cargador
+"""
+Доступ к файловому хранилищу(Cargador) осуществляется по протоколу xmlrpc и http.
+Для этого используются модули xmlrpclib и httplib.
+Отступление:
+	Для того, чтобы был возможен доступ к Cargador-у по протоколу xmlrpc и http
+	необходимо настроить конфигурационный файл Cargador-а.
+	Этот файл лежит рядом с исполняемым файлом Cargador-а
+	и называется в зависимости от операционной системы
+	Windows: cargador.win.conf
+	Linux: cargador.linux.conf
+	MacOs: cargador.mac.conf
+
+	В этом конфигурационном файле нужно прописать порт на который будут происходить xmlrpc и http запросы.
+	::
+		Пример:
+			...
+			<tcpServer>
+			...
+			<httpGate>
+				<port>4080</port>
+			</httpGate>
+
+			<rpcGate>
+				<port>4040</port>
+			</rpcGate>
+			...
+			</tcpServer>
+			...
+	::
+
+	После изменения конфигурационного файла нужно перестартовать сервис Cargador-а.
+"""
+
+
+import httplib
+import xmlrpclib
+import os
+import urllib
+
+
+class Cargador(xmlrpclib.ServerProxy): 
+	"""
+		Класс Cargador для доступа к файловому хранилищу Cargador.
+		
+		Here is a number of methods inherrited from XML-RPC object in Cargador class
+		::
+			statusInfo()
+			statusTables(tablesBitMaks INT, flags INT)
+			catalogResolve(hash HASH)
+			catalogDelete(hash HASH, password STR)
+			catalogUpload(hash HASH, siteList STR, CommenceFlags INT, userName STR, url STR, retryCount INT)
+			catalogDownload(hash HASH, siteList STR, CommenceFlags INT, userName STR, url STR, retryCount INT)
+			controlIO(hash HASH, TableKind INT, Action INT)
+		::
+		read documentation to invetigate methods API
+	"""	
+	
+	def __init__(self, _host, _rpc_port, _http_port):
+		
+		xmlrpclib.ServerProxy.__init__(self, 'http://{0}:{1}'.format(_host, _rpc_port))
+		self.host = _host
+		self.http_port = _http_port
+
+	def import_file(self, fileName, url):
+		"""
+		Принимает на вход абсолютный путь до файла и локатор на место в хранилище (по сути папка, куда будет положен файл в файловом хранилище).
+		В качестве локатора выступает полный путь задачи в церебро, например 'Test project/Test task'
+		
+		Выполняет импорт файла в файловое хранилище по HTTP протоколу методом PUT
+		и возвращает его хеш.	
+	
+		Пример:
+		::
+			rpc = cargador.Cargador('server', 4040, 4080); # Создаем объект Cargador
+			rpc.importFile('cargador.py', 'Test Folder')) # импортируем файл в файловое хранилище Cargador
+		::
+		"""
+		c_url = url
+		if not c_url.startswith('/'):
+			c_url = '/' + c_url
+			
+		if c_url.endswith('/'):
+			c_url = c_url.rstrip('/')
+		
+		c_url = c_url + '/' + os.path.basename(fileName)
+		
+		headers = {
+			"User-Agent": "Python uploader",
+			"Content-type": "application/octet-stream",
+			"Accept": "text/plain"}
+
+		f = open(fileName, "rb")
+
+		conn = httplib.HTTPConnection(self.host, self.http_port)
+		conn.request("PUT", self.host + ':' + str(self.http_port) + '/' + urllib.quote_plus(c_url), f, headers)
+
+		response = conn.getresponse()
+		#print(response.status, response.reason);
+		if(response.status!=201):
+			raise RuntimeError('Attachment failed with code: ' + str(response.status) + '. reason: ' + response.reason);
+
+		ret = response.read().decode('ascii').strip()		
+
+		conn.close()
+		return ret

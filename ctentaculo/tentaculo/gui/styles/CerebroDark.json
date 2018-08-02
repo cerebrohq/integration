@@ -1,0 +1,20 @@
+{
+    "@color_main_bg": "#535353",
+	"@color_dark_bg": "#323232",
+	"@color_medium_bg": "#454545",
+	"@color_line_edit": "#272727",
+	"@color_text_passive": "#A0A0A0",
+	"@color_text_active": "#FFFFFF",
+	"@color_text_highlight": "#5ea8fd",
+	"@color_button_normal": "#4c94fe",
+	"@color_button_hover": "#4c94fe",
+	"@color_button_down": "#4c94fe",
+	"@font_regular": "HelveticaNeue",
+	"@font_medium": "HelveticaNeue-Medium",
+	"@font_bold": "HelveticaNeue-Bold",
+	"@font_size_tiny": "10px",
+	"@font_size_small": "11px",
+	"@font_size_regular": "13px",
+	"@font_size_big": "14px",
+	"@font_size_huge": "18px"
+}

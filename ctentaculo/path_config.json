@@ -1,0 +1,38 @@
+{
+	"file_path": [
+		{
+			"folder_path": "",
+			"task_activity": "",
+			"name": "$(task_name)",
+			"ver_padding": "3",
+			"ver_prefix": "_v",
+			"publish": "$(task_parent_path)",
+			"version": "$(task_parent_path)/versions"
+		}
+	],
+	"project_path": [
+		{
+			"project_name": "",
+			"task_activity": "",
+			"paths": [
+				"/s2/front/connector.files",
+				"/Volumes/front/connector.files",
+				"//s2/front/connector.files"
+			]
+		}
+	],
+	"soft_folder":
+	{
+		"maya": "3D",
+		"nuke": "Compose",
+		"houdini": "3D",
+		"blender": "3D",
+		"cinema4d": "3D",
+		"3dsmax": "3D"
+	},
+	"trans_mode":
+	{
+		"cinema4d": "True",
+		"houdini": "True"
+	}
+}

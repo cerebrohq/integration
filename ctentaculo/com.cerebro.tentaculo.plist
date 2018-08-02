@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>my.startup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>sh</string>
+    <string>-c</string>
+    <string>
+      launchctl setenv PYTHONPATH ${HOME}/cerebro:${HOME}/cerebro/ctentaculo:${HOME}/cerebro/ctentaculo/tentaculo:${HOME}/cerebro/ctentaculo/tentaculo/api/imaya:${HOME}/cerebro/ctentaculo/tentaculo/api/ihoudini:${HOME}/cerebro/ctentaculo/tentaculo/api/ic4d:${HOME}/cerebro/ctentaculo/tentaculo/api/inuke:${PYTHONPATH}; launchctl setenv NUKE_PATH ${HOME}/cerebro/ctentaculo/tentaculo/api/inuke:${NUKE_PATH}; launchctl setenv PATH ${HOME}/cerebro/ctentaculo/tentaculo/api/imax:${PATH}
+    </string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>

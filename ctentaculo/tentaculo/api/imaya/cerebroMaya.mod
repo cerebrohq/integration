@@ -1,0 +1,6 @@
++ MAYAVERSION:2017 PLATFORM:win64 CerebroMaya 1.0 .
+MAYA_SCRIPT_PATH +:= ./
+PYTHONPATH +:= ./
+
+
+
