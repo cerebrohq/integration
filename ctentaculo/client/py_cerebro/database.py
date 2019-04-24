@@ -191,11 +191,9 @@ class Database():
 		psycopg2.extensions.register_adapter(set, Set_to_sql_arr)
 
 	def __del__(self):
-		print('del')
 		self.__disconnectDB()	
 
 	def __disconnectDB(self):
-		print('disconnect')
 		if self.db != None and self.db.closed == False:
 			self.db.close()
 		
@@ -204,9 +202,7 @@ class Database():
 
 		self.disconnected_by_timer = True
 
-	def __reconnectDB(self):
-		print('reconnect')
-
+	def __reconnectDB(self):		
 		self.__disconnectDB()
 		if self.is_connected_by_client:
 			err = self.connect_from_cerebro_client()
@@ -314,14 +310,11 @@ class Database():
 		Executes the query and returns the result. The result has a form of a table (list pf tuples).
 		"""
 
-		print('start execute', query)
 		if self.disconnected_by_timer or self.db == None or self.db.closed:
 			self.__reconnectDB()
 		else:	
-			self.disconnectTask.cancel()		
-
-		print('execute')
-
+			self.disconnectTask.cancel()
+		
 		try:
 			pars = (self.sid,) + parameters
 			self.db.execute('select "webResume2"(%s);' + query,  pars)
@@ -348,8 +341,6 @@ class Database():
 			else:
 				raise			
 
-		#self.__disconnectDB()
-
 		table = None
 		try:
 			table = self.db.fetchall()
@@ -363,7 +354,7 @@ class Database():
 			else:
 				raise
 		
-		print(table)
+		#print(table)
 
 		self.disconnectTask = threading.Timer(self.db_timeout, self.__disconnectDB)
 		self.disconnectTask.start()

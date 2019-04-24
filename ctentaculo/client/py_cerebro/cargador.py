@@ -63,10 +63,12 @@ class Cargador(xmlrpc.client.ServerProxy):
 		if c_url.endswith('/'):
 			c_url = c_url.rstrip('/')
 
+		u_file_name = file_name.encode('utf-8')
+
 		c_url = c_url + '/' + os.path.basename(file_name)
 		
 		host = '{0}:{1}'.format(self.host, self.http_port)
-		content_lenght = '{0}'.format(os.stat(file_name).st_size)
+		content_lenght = '{0}'.format(os.stat(u_file_name).st_size)
 		headers = {
 			"User-Agent": "Python uploader",
 			"Content-type": "application/octet-stream",
@@ -75,7 +77,7 @@ class Cargador(xmlrpc.client.ServerProxy):
 			"accept-encoding": "gzip, deflate",
 			"content-length": content_lenght}
 
-		f = open(file_name, "rb")
+		f = open(u_file_name, "rb")
 
 		conn = http.client.HTTPConnection(self.host, self.http_port)
 		conn.request("PUT", self.host + ':' + str(self.http_port) + '/' + urllib.parse.quote_plus(c_url), f, headers)

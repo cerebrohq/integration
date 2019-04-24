@@ -23,8 +23,8 @@ def add_menu():
 	if ver_installed[0] > 0:
 		userMenu.add_action('ctentaculo.install.uninstall', 'Uninstall v{0}'.format(ver_installed[1]), icon)
 
-	#cerebro.actions.MessageForumToolBar().add_action('ctentaculo.browse.browse', 'Browse Task', '')
-	#cerebro.actions.TaskNavigatorMenu().add_action('ctentaculo.browse.make_dirs',  'Make Dirictories' , '')
+	cerebro.actions.MessageForumToolBar().add_action('ctentaculo.browse.browse', 'Browse Task', '')
+	cerebro.actions.TaskNavigatorMenu().add_action('ctentaculo.browse.make_dirs',  'Make Directories' , '')
 
 def remove_menu():
 	mainMenu = cerebro.actions.MainMenu()

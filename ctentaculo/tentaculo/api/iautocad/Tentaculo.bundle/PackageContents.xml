@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage
+	SchemaVersion="1.0"
+	AppVersion="1.0"
+	Author="Cerebro, Inc."
+	ProductCode="e8de9067-e4eb-4699-9d4c-76aad6cf7e5b"
+	Name="Tentaculo"
+>
+
+	<CompanyDetails
+		Name="Cerebro, Inc."
+		Phone="1 (555)-415-1234"
+		Url="www.cerebrohq.com"
+		Email="support@cerebrohq.com"
+	/>
+
+	<Components>
+		<ComponentEntry
+			ModuleName="./Contents/iautocad.dll"
+		/>
+	</Components>
+
+</ApplicationPackage>

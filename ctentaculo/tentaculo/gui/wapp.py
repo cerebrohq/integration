@@ -21,7 +21,7 @@ def question(message, title = default_title):
 	clogger.CLogger().log.info('Question: %s', message,)	
 	res = QMessageBox.question(capp.app_window(), title, message)	
 	clogger.CLogger().log.info('Answer: %s', res)	
-	return res
+	return res == QMessageBox.StandardButton.Yes
 
 def string(request, items, editable, title = default_title):
 	clogger.CLogger().log.info('String request: %s', request)
@@ -31,14 +31,14 @@ def string(request, items, editable, title = default_title):
 	clogger.CLogger().log.info('Answer: %s', res)
 	return res
 
-def directory(title, dir = None):	
-	dir = QFileDialog.getExistingDirectory(capp.app_window(), title, dir)
+def directory(title, start_dir = None):	
+	dir = QFileDialog.getExistingDirectory(capp.app_window(), title, start_dir)
 	#clogger.CLogger().log.info('Save directory selected: %s', dir)
 	return dir
 
-def file(title, dir = None):
+def file(title, start_dir = None):
 	res = None
-	dir = QFileDialog.getOpenFileNames(capp.app_window(), title, dir)
+	dir = QFileDialog.getOpenFileNames(capp.app_window(), title, start_dir)
 	if isinstance(dir, tuple):
 		res = dir[0] if len(dir[0]) > 0 else None
 	else:

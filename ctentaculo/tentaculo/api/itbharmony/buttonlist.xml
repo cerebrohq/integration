@@ -1,0 +1,10 @@
+<!DOCTYPE Scripts>
+<Scripts>
+ <Script icon="menuTodolist" function="menuTodolist" file="CTentaculo.js"/>
+ <Script icon="menuBrowser" function="menuBrowser" file="CTentaculo.js"/>
+ <Script icon="menuPublish" function="menuPublish" file="CTentaculo.js"/>
+ <Script icon="menuReport" function="menuReport" file="CTentaculo.js"/>
+ <Script icon="menuWorkdir" function="menuWorkdir" file="CTentaculo.js"/>
+ <Script icon="menuLogout" function="menuLogout" file="CTentaculo.js"/>
+ <Script icon="menuAbout" function="menuAbout" file="CTentaculo.js"/>
+</Scripts>

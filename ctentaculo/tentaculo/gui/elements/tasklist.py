@@ -2,13 +2,15 @@
 import locale, webbrowser
 from tentaculo.gui import style
 
-from tentaculo.core import capp, clogger, config
+from tentaculo.core import capp, clogger, config, utils, utils
 from tentaculo.api.icerebro import db
 
 from tentaculo.Qt.QtGui import *
 from tentaculo.Qt.QtCore import *
 from tentaculo.Qt.QtWidgets import *
 from tentaculo.Qt import QtCompat
+
+COLUMN_COUNT = 6
 
 
 class TaskList(QFrame):
@@ -17,7 +19,7 @@ class TaskList(QFrame):
 
 	task_id = None
 	__tree_display = False
-	__sort_column = 0
+	__sort_column = 4
 
 	def __init__(self, treeDisplay = False, parent = None):
 		super(self.__class__, self).__init__(parent = parent)
@@ -25,8 +27,8 @@ class TaskList(QFrame):
 		self.conn = db.Db()
 		self.config = config.Config()
 		self.__tree_display = treeDisplay
-		self.initStyle()
 		self.initUI()
+		self.initStyle()
 
 	def initStyle(self):
 		styler = style.Styler()
@@ -44,8 +46,9 @@ class TaskList(QFrame):
 
 		self.tableWidget = QTableWidget(self)
 		self.tableWidget.setObjectName("tasks")
-		self.tableWidget.setColumnCount(4)
-		for i in range(1, 4):
+		self.tableWidget.setColumnCount(COLUMN_COUNT)
+		self.tableWidget.setRowCount(0)
+		for i in range(1, COLUMN_COUNT):
 			self.tableWidget.setColumnHidden(i, True)
 		self.tableWidget.setColumnWidth(0, 400)
 		self.tableWidget.setSortingEnabled(True)
@@ -87,6 +90,7 @@ class TaskList(QFrame):
 			for i in range(self.tableWidget.rowCount()):
 				self.tableWidget.setRowHidden(i, False)
 		else:
+			text = utils.string_unicode(text)
 			for i in range(self.tableWidget.rowCount()):
 				match = False
 				cell = self.tableWidget.item(i, 0)
@@ -117,20 +121,29 @@ class TaskList(QFrame):
 			cell = self.tableWidget.item(i, 0)
 			if cell is not None and cell.id == task["id"]:
 				updated = True
+				# Prevent sorting during changes
 				self.tableWidget.setSortingEnabled(False)
+				# Old widget will be deleted by table
 				self.tableWidget.setCellWidget(i, 0, self.__makeTaskWidget(task, not self.__tree_display))
-				self.tableWidget.setItem(i, 0, TaskItem(task))
-				self.tableWidget.setItem(i, 1, QTableWidgetItem(str(task["status_order"])))
-				self.tableWidget.setItem(i, 2, QTableWidgetItem(task["activity"]))
-				self.tableWidget.setItem(i, 3, QTableWidgetItem(str(task["end"])))
+				# Update existing fields
+				self.tableWidget.item(i, 0).initData(task)
+				self.tableWidget.item(i, 1).setText(str(task["status_order"]))
+				self.tableWidget.item(i, 2).setText(task["activity"])
+				self.tableWidget.item(i, 3).setText(str(task["end"]))
+				self.tableWidget.item(i, 4).setText(str(task["order"]))
+				self.tableWidget.item(i, 5).setText(task["path"])
+
 				self.tableWidget.setSortingEnabled(True)
 				break
 		return updated
 
 	def setTasks(self, tasks):
 		self.tableWidget.clear()
+		self.tableWidget.setRowCount(0)
+		self.task_id = None
 
 		if tasks is not None:
+			# Prevent sorting during changes
 			self.tableWidget.setSortingEnabled(False)
 			self.tableWidget.setRowCount(len(tasks))
 
@@ -140,9 +153,13 @@ class TaskList(QFrame):
 				self.tableWidget.setItem(i, 1, QTableWidgetItem(str(task["status_order"])))
 				self.tableWidget.setItem(i, 2, QTableWidgetItem(task["activity"]))
 				self.tableWidget.setItem(i, 3, QTableWidgetItem(str(task["end"])))
+				self.tableWidget.setItem(i, 4, QTableWidgetItem(str(task["order"])))
+				self.tableWidget.setItem(i, 5, QTableWidgetItem(task["path"]))
 
-			for i in range(1, 4):
+			for i in range(1, COLUMN_COUNT):
 				self.tableWidget.setColumnHidden(i, True)
+
+			self.tableWidget.setCurrentCell(-1, -1)
 			self.tableWidget.setSortingEnabled(True)
 			self.setSortColumn()
 			self.setFilter()
@@ -176,13 +193,13 @@ class TaskList(QFrame):
 			ind = acts.index(menu.exec_(self.tableWidget.viewport().mapToGlobal(pos)))
 			if ind == 0:
 				if taskCerebro is not None:
-					webbrowser.open(ur"https://cerebrohq.com/cr_astro.php?protocol=cerebro&url={0}".format(taskCerebro))
+					webbrowser.open(utils.string_unicode(r"cerebro://{0}?tid={1}").format(taskCerebro, self.task_id))
 			elif ind == 1:
 				if taskPath is not None:
 					capp.copyToClipboard(taskPath)
 			elif ind == 2:
 				if taskPath is not None:
-					capp.showDir(taskPath)
+					utils.show_dir(taskPath)
 		except ValueError:
 			pass
 
@@ -221,12 +238,12 @@ class TaskList(QFrame):
 			taskThumb.setObjectName("thumb")
 
 			iconfile = task["thumbnail"]
-			logo = QImage(iconfile).scaled(146, 80, Qt.KeepAspectRatioByExpanding)
+			logo = QImage(iconfile).scaled(146, 80, Qt.KeepAspectRatioByExpanding) if iconfile is not None else QImage()
 
 			show_folder = not fullInfo and task["is_folder"]
 
 			if logo.isNull() and not show_folder:
-				iconfile = capp.getResDir("image.png")
+				iconfile = utils.getResDir("image.png")
 				logo = QImage(iconfile)
 
 			if not logo.isNull():
@@ -234,24 +251,35 @@ class TaskList(QFrame):
 			
 			if show_folder:
 				folderIcon = QLabel(thumbFrame)
-				icon = QImage(capp.getResDir("folder-overlay.png"))
+				icon = QImage(utils.getResDir("folder-overlay.png"))
 				folderIcon.setPixmap(QPixmap.fromImage(icon))
 				folderIcon.setFixedSize(146, 80)
 				folderIcon.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 	
 			verticalLayout = QVBoxLayout()
 			verticalLayout.setContentsMargins(0, 0, 0, 0)
-			verticalLayout.setSpacing(0)
-
-			nameLabel = QLabel(task["name"], wgt)
-			nameLabel.setObjectName("header")
-
-			verticalLayout.addWidget(nameLabel)
+			verticalLayout.setSpacing(0)			
 
 			if fullInfo:
-				pathLabel = QLabel(task["path_repr"], wgt)
+				pathname = task["path"].split('/')[-2]
+
+				pathLabel = QLabel(pathname, wgt)
+				pathLabel.setObjectName("header")
 				pathLabel.setWordWrap(True)
+				pathLabel.setToolTip(task["path_repr"])
 				verticalLayout.addWidget(pathLabel)
+				
+				nameLabel = QLabel(task["name"], wgt)
+				nameLabel.setObjectName("active")
+				verticalLayout.addWidget(nameLabel)
+				
+				prjLabel = QLabel(task["path"].split('/')[1], wgt)
+				verticalLayout.addWidget(prjLabel)
+				
+			else:
+				nameLabel = QLabel(task["name"], wgt)
+				nameLabel.setObjectName("header")
+				verticalLayout.addWidget(nameLabel)
 
 			if fullInfo or not task["is_folder"]:
 				horizontalLayout_2 = QHBoxLayout()
@@ -260,7 +288,7 @@ class TaskList(QFrame):
 
 				deadlineLabel = QLabel("Deadline: ", wgt)
 				text = task["end"].strftime("%d %B %Y")
-				if not capp.PY3: text = text.decode(locale.getpreferredencoding())
+				if not utils.PY3: text = text.decode(locale.getpreferredencoding())
 				deadlineDate = QLabel(text, wgt)
 				deadlineDate.setObjectName("active")
 				horizontalSpacer = QSpacerItem(0, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
@@ -297,15 +325,15 @@ class TaskItem(QTableWidgetItem):
 	def initData(self, task):
 		if task is not None:
 			self.id = task["id"]
-			self.name = task["name"]
-			self.path = task["path"]
+			self.name = task["name"].lower()
+			self.path = task["path"].lower()
 
 	def contains(self, text):
 		match = False
 
 		if text is not None:
-			if text.lower() in self.name.lower(): match = True
-			if text.lower() in self.path.lower(): match = True
+			if text.lower() in self.name: match = True
+			if text.lower() in self.path: match = True
 
 		return match
 

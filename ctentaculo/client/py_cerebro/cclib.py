@@ -24,6 +24,7 @@ import traceback
 import zipfile
 import tempfile
 import re
+import subprocess
 
 def formatException(e):
 	exception_list = traceback.format_stack()
@@ -57,7 +58,7 @@ def hash16_64(b16_str):
 	if len(b16_str)!=64:
 		raise Exception('Wrong hash length (muse be 64)');
 
-	ba = base64.b16decode(b16_str.encode('ascii'));
+	ba = base64.b16decode(b16_str.encode('ascii'), True);
 	return base64.standard_b64encode(ba).decode('ascii').replace('+', '-').replace('/', '_').replace('=', '~')
 
 def hash64_16(b64_str):
@@ -294,3 +295,31 @@ def smtpOptions(cron_conf):
 		ret['debugEmail'] = cron_conf.MAIL_ADMIN;
 
 	return ret;
+
+def shell(cmd, raiseIfFailed = True):
+	proc = subprocess.Popen(cmd,  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,  shell=True,  universal_newlines=True);
+	buf = bytearray()
+	while True:
+		ch = proc.stdout.buffer.read();
+		if not ch:
+			break
+
+		buf += ch
+
+	proc.wait();
+	try:
+		out = buf.decode(sys.stdout.encoding);
+	except:
+		out = buf.decode(sys.stdout.encoding, errors='ignore');
+
+	code = proc.returncode;
+
+	if raiseIfFailed:
+		if code != 0:
+			txt = 'exitCode: ' + str(code) + ' command: ' + cmd;
+			txt += "\nout:\n" + out;
+			raise Exception(txt);
+		else:
+			return out;
+	else:
+		return tuple([out, code]);

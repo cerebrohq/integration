@@ -1,4 +1,4 @@
-QWidget#TASK_WINDOW, QWidget#LOGIN_WINDOW, QWidget#ABOUT_WINDOW {
+QWidget#TASK_WINDOW, QWidget#LOGIN_WINDOW, QWidget#ABOUT_WINDOW, QWidget#SEND_MESSAGE_WINDOW {
 	background-color: @color_main_bg;
 }
 
@@ -9,7 +9,7 @@ QFrame {
 	background: transparent;
 }
 
-QFrame#tasksSort, QFrame#browseSearch {
+QFrame#tasksSort, QFrame#browseSearch, QFrame#tasksSearch {
 	background-color: @color_medium_bg;
 	min-height: 48px;
 	border-right: 1px solid @color_dark_bg;
@@ -34,7 +34,7 @@ QFrame#tasksList {
 
 QFrame#tasksHeader {
 	background-color: @color_main_bg;
-	min-height: 96px;
+	min-height: 97px;
 	border-bottom: 1px solid @color_dark_bg;
 }
 
@@ -204,7 +204,7 @@ QTableView::item:focus {
 /*
 	SCROLLBAR
 */
-QTableView QScrollBar:vertical {
+QScrollBar:vertical {
 	border: 0;
 	background: transparent;
 	width: 8px;
@@ -217,12 +217,12 @@ QTableView#tasks QScrollBar::handle:vertical {
 	border-radius: 2px;
 }
 
-QTableView#files QScrollBar::handle:vertical, QTableView#attach QScrollBar::handle:vertical {
+QTableView#files QScrollBar::handle:vertical, QTableView#attach QScrollBar::handle:vertical, QTextEdit QScrollBar::handle:vertical {
 	background-color: @color_dark_bg;
 	border-radius: 2px;
 }
 
-QTableView QScrollBar::add-line:vertical {
+QScrollBar::add-line:vertical {
 	height: 0px;
 	background: transparent;
 	border: 0;
@@ -230,7 +230,7 @@ QTableView QScrollBar::add-line:vertical {
 	subcontrol-origin: margin;
 }
 
-QTableView QScrollBar::sub-line:vertical {
+QScrollBar::sub-line:vertical {
 	height: 0px;
 	background: transparent;
 	border: 0;
@@ -238,7 +238,7 @@ QTableView QScrollBar::sub-line:vertical {
 	subcontrol-origin: margin;
 }
 
-QTableView QScrollBar::sub-page:vertical, QTableView QScrollBar::add-page:vertical {
+QScrollBar::sub-page:vertical, QScrollBar::add-page:vertical {
 	background: transparent;
 	border: 0;
 	color: none;
@@ -292,6 +292,20 @@ QPushButton {
 	padding: 0px 20px;
     min-width: 60px;
 	min-height: 28px;
+}
+
+QPushButton#settings {
+	border: 0;
+	border-radius: 14px;
+	padding: 0;
+	min-width: 40px;
+	min-height: 26px;
+	background-color: transparent;
+	qproperty-icon: url(@resDir/settings.png);
+}
+
+QPushButton#settings:hover {
+	background-color: @color_button_normal;
 }
 
 QPushButton#login {

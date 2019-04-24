@@ -11,6 +11,6 @@ The package includes the following modules:
 * :py:mod:`py_cerebro.cclib` -- Contains auxiliary functions for handling hashes and bit flags.
 """
 
-__all__ = ["database", "cargador", "dbtypes", "cclib"]
+__all__ = ["database", "dbtypes", "cclib", "cargador"]
 from py_cerebro import *
  

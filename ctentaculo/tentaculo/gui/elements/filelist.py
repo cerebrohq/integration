@@ -2,7 +2,7 @@
 import os, datetime
 from tentaculo.gui import style
 
-from tentaculo.core import capp, fmanager, config, clogger, vfile
+from tentaculo.core import capp, fmanager, config, clogger, vfile, utils
 from tentaculo.api.icerebro import db
 
 from tentaculo.Qt.QtGui import *
@@ -15,31 +15,29 @@ class FileList(QFrame):
 	refresh = Signal()
 	request_close = Signal()
 
-	__task = None
-	__selected_task_id = None
-	__selected_file_id = None
-	__selected_file_path = None
-
-	__link_mode = False
-	__task_select = False
-	__task_enabled = False
-
-	__filter_mode = 0
-
 	def __init__(self, link_mode = False, task_select = False, parent = None):
 		super(self.__class__, self).__init__(parent = parent)
 		self.initData(link_mode, task_select)
-		self.initStyle()
 		self.initUI()
+		self.initStyle()
 
 	def initData(self, link_mode = False, task_select = False):
 		self.log = clogger.CLogger().log
 		self.conn = db.Db()
 		self.config = config.Config()
 		self.fman = fmanager.FManager()
+
+		self.__task = None
+		self.__selected_task_id = None
+		self.__selected_file_id = None
+		self.__selected_file_path = None
+		self.__selected_file_task = None
+
+		self.__task_enabled = False
+		self.__filter_mode = 0
+
 		self.__link_mode = link_mode
 		self.__task_select = task_select
-		self.__linked_tasks = False
 
 	def initStyle(self):
 		styler = style.Styler()
@@ -189,7 +187,6 @@ class FileList(QFrame):
 
 			for i in range(self.tableWidget.rowCount()):
 				fitem = self.tableWidget.item(i, 1)
-				no_local = self.__link_mode and fitem.is_local
 				self.tableWidget.setRowHidden(i, not fitem.is_publish)
 
 	def filter_mode(self):
@@ -210,7 +207,7 @@ class FileList(QFrame):
 				else:
 					file_path = os.path.join(fvers.path_version, fvers.versions[fvers.last_number])
 
-				if self.fman.open(self.__task, file_path, self.__linked_tasks):
+				if self.fman.open(self.__task, file_path, False):
 					self.conn.set_work_status(self.__selected_task_id)
 					started = True
 			else:
@@ -218,7 +215,7 @@ class FileList(QFrame):
 					self.conn.set_work_status(self.__selected_task_id)
 					started = True
 		else:
-			if self.fman.open(self.__task, self.__selected_file_path, self.__linked_tasks):
+			if self.fman.open(self.__task, self.__selected_file_path, False):
 				self.conn.set_work_status(self.__selected_task_id)
 				started = True
 
@@ -239,15 +236,16 @@ class FileList(QFrame):
 		self.fman.view(self.__task, self.__selected_file_path)
 
 	def importSelectedFile(self, as_reference = False):
-		if self.__selected_file_path is None or self.__selected_file_id is None or self.__task is None:
+		if self.__selected_file_path is None or self.__selected_file_id is None or self.__selected_file_task is None:
 			return False
 
-		return self.fman.link(self.__task, self.__selected_file_path) if as_reference else self.fman.embed(self.__task, self.__selected_file_path)
+		return self.fman.link(self.__selected_file_task, self.__selected_file_path) if as_reference else self.fman.embed(self.__selected_file_task, self.__selected_file_path)
 
 	def clearTask(self):
 		self.__task = None
 		self.__selected_task_id = None
 		self.__selected_file_id = None
+		self.__selected_file_task = None
 		self.__selected_file_path = None
 		self.__task_enabled = False
 		self.pb_embed.setEnabled(False)
@@ -272,22 +270,16 @@ class FileList(QFrame):
 			self.__task_enabled = valid[0] and task["enabled_task"]
 			self.log.debug('Task %s is enabled %s', task["path"] + task["name"], self.__task_enabled)
 			
-			self.pb_taskStart.setEnabled(self.__task_enabled and not task["name_editable"])
+			self.pb_taskStart.setEnabled(self.__task_enabled and (not task["name_editable"] or (task.get("files", None) is not None and len(task["files"]) == 0)))
 			self.fileButton.setEnabled(self.__task_enabled)
 			self.update_table()
 
-	def update_table(self, show_links = False):
+	def update_table(self):
 		if self.__task is not None:
-			self.__linked_tasks = show_links
 			valid = self.config.task_valid(self.__task)
 			taskFiles = []
-			if show_links:
-				linked = self.conn.linked_tasks(self.__selected_task_id)
-				if linked is not None:
-					for t in linked:
-						taskFiles += self.conn.task_files(t).values()
-			elif valid[0]:
-				taskFiles = self.conn.task_files(self.__selected_task_id).values()
+			if valid[0]:
+				taskFiles = self.__task.get("files", {}).values()
 			elif valid[1] and self.__link_mode:
 				childTasks = self.conn.children_tasks(self.__selected_task_id)
 				if childTasks is not None:
@@ -315,13 +307,10 @@ class FileList(QFrame):
 			self.request_close.emit()
 
 	def __set_image(self, thumb = None):
-		if thumb is None:
-			logo = QImage(capp.getResDir("image.png"))
-		else:
-			logo = QImage(thumb).scaled(400, 200, Qt.KeepAspectRatioByExpanding)
+		logo = QImage(utils.getResDir("image.png")) if thumb is None else QImage(thumb).scaled(400, 200, Qt.KeepAspectRatioByExpanding)
 
 		if logo.isNull():
-			logo = QImage(capp.getResDir("image.png"))
+			logo = QImage(utils.getResDir("image.png"))
 
 		self.taskThumb.setPixmap(QPixmap.fromImage(logo))
 	
@@ -353,7 +342,7 @@ class FileList(QFrame):
 				self.importSelectedFile(False)
 			elif ind == 4:
 				if self.__selected_file_path is not None:
-					capp.showDir(self.__selected_file_path)
+					utils.show_dir(self.__selected_file_path)
 			elif ind == 5:
 				if self.__selected_file_path is not None:
 					capp.copyToClipboard(self.__selected_file_path)
@@ -372,6 +361,7 @@ class FileList(QFrame):
 			self.__set_image(fitem.thumbnail)
 
 			self.__selected_file_path = fitem.path
+			self.__selected_file_task = fitem.task_id
 			self.__selected_file_id = fitem.id
 
 	def __cellActivated(self, row, col):
@@ -380,6 +370,7 @@ class FileList(QFrame):
 		if fitem is not None:
 			self.__selected_file_path = fitem.path
 			self.__selected_file_id = fitem.id
+			self.__selected_file_task = fitem.task_id
 			self.openSelectedFile()
 
 def makeFileWidget(file):
@@ -387,7 +378,7 @@ def makeFileWidget(file):
 
 	if file is not None:
 		file_id = int(file["id"])
-		publish, local = file_id == -1, file_id == -2
+		publish, local, unpublished = file_id == -1, file_id == -2, file_id < -2
 		wgt.setFixedSize(380, 30 if publish else 20)
 
 		horizontalLayout = QHBoxLayout(wgt)
@@ -414,9 +405,9 @@ def makeFileWidget(file):
 		lb_icon.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 		if publish:
 			lb_name.setObjectName("publish")
-			lb_icon.setPixmap(QPixmap(capp.getResDir("publish.png")))
-		elif local:
-			lb_icon.setPixmap(QPixmap(capp.getResDir("local.png")))
+			lb_icon.setPixmap(QPixmap(utils.getResDir("publish.png")))
+		elif local or unpublished:
+			lb_icon.setPixmap(QPixmap(utils.getResDir("local.png")))
 
 		horizontalLayout.addWidget(lb_name)
 		horizontalLayout.addItem(horizontalSpacer)

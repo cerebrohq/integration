@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import sys, os, time, datetime
 
-from tentaculo.core import capp, config, fmanager
+from tentaculo.core import capp, config, fmanager, utils
 from tentaculo.gui import style
 from tentaculo.gui.elements import filelist
 from tentaculo.api.icerebro import db
@@ -25,7 +25,6 @@ class w_linkedfiles(QDialog):
 	__filter_mode = 0
 
 	def __init__(self, parent = None):
-		capp.clearUI(self.NAME)
 		super(self.__class__, self).__init__(parent = parent)
 		self.initData()
 		self.initUI()
@@ -223,13 +222,10 @@ class w_linkedfiles(QDialog):
 			self.tableWidget.setCurrentCell(-1, -1) 
 
 	def __set_image(self, thumb = None):
-		if thumb is None:
-			logo = QImage(capp.getResDir("image.png"))
-		else:
-			logo = QImage(thumb).scaled(400, 200, Qt.KeepAspectRatioByExpanding)
+		logo = QImage(utils.getResDir("image.png")) if thumb is None else QImage(thumb).scaled(400, 200, Qt.KeepAspectRatioByExpanding)
 
 		if logo.isNull():
-			logo = QImage(capp.getResDir("image.png"))
+			logo = QImage(utils.getResDir("image.png"))
 
 		self.taskThumb.setPixmap(QPixmap.fromImage(logo))
 
@@ -244,6 +240,7 @@ class w_linkedfiles(QDialog):
 			self.__selected_file_id = fitem.id
 
 	def run(self):
+		self.activateWindow()
 		return self.exec_()
 
 	def stop(self):

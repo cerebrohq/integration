@@ -10,7 +10,7 @@ except:
 	except:
 		from py_cerebro2 import dbtypes, cargador, cclib
 
-from tentaculo.core import capp, paths, config
+from tentaculo.core import paths, config, utils
 
 XMLRPC_PORT = 4040
 HTTP_PORT = 4080
@@ -141,7 +141,7 @@ class Cargo():
 			return filepath
 
 		if self.storages[self.current_uid]["connection"] == 1:
-			path = os.path.join(capp.tempdir() if self.conf.local_dir is None else self.conf.local_dir, ".cache", hash)
+			path = os.path.join(utils.tempdir() if self.conf.local_dir is None else self.conf.local_dir, ".cache", hash)
 
 			if not os.path.exists(os.path.dirname(path)):
 				try:

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import sys, os, platform, shutil, re, time, subprocess, datetime
 
-from tentaculo.core import capp, paths, jsonio, clogger
+from tentaculo.core import capp, paths, jsonio, clogger, utils
 from transliterate import slugify, detect_language
 
 # WARNING: This is SINGLETON
@@ -11,6 +11,9 @@ class Config(object):
 	MODE_LOCAL = 0
 	MODE_NETWORK = 1
 	MODE_REMOTE = 2
+
+	MODE_COPY = 0
+	MODE_MOVE = 1
 
 	def __new__(cls, *args, **kwargs):
 		if not isinstance(cls.__instance, cls):
@@ -26,10 +29,12 @@ class Config(object):
 	def clear(self):
 		self.netpaths = paths.Paths()
 
+		# Mirada executable path
+		self.mirada_path = None
 		# Universe config
 		self.config_unid = None
 		self.config_pool = {}
-		localcfg = jsonio.read(os.path.join(capp.plugin_dir(), "path_config.json"))
+		localcfg = jsonio.read(os.path.join(utils.plugin_dir(), "path_config.json"))
 		if localcfg is not None:
 			self.set_config("local", localcfg)
 		# File names
@@ -46,6 +51,7 @@ class Config(object):
 		self.defPaths = {}
 		self.roots = {}
 		self.net_mode = self.MODE_NETWORK
+		self.save_mode = self.MODE_COPY
 		self.trans_mode = False
 
 	def set_local_dir(self, dir):
@@ -58,7 +64,7 @@ class Config(object):
 		if unid is None or (unid in self.config_pool and not force): return False
 		if cfg is None or len(cfg) == 0:
 			self.config_pool[unid] = None
-			self.log.warning("Invalid config data: unid - %s; cfg - %s", unid, cfg)
+			self.log.warning("Invalid database config data: unid - %s; cfg - %s", unid, cfg)
 			return False
 
 		self.log.info("Setting config for unid: %s", unid)
@@ -66,6 +72,7 @@ class Config(object):
 		defPaths = {}
 		roots = {}
 		net_mode = self.MODE_NETWORK
+		save_mode = self.MODE_COPY
 		trans_mode = False
 		# Project paths
 		project_paths = cfg["project_path"]
@@ -99,11 +106,24 @@ class Config(object):
 
 		self.log.debug('trans_mode is set to %s', trans_mode)
 
+		# Save mode
+		modes = ["copy", "move"]
+		mode = cfg.get("version_save", {}).get(capp.HOST_NAME, {}).get("save_mode", "copy").lower()
+		if mode in modes:
+			save_mode = modes.index(mode)
+			self.log.debug("save_mode is set to %s", modes[save_mode])
+
+		# Mirada executable path
+		mirada = cfg.get("mirada_path", {}).get(utils.HOST_OS, None)
+		if mirada is not None and os.path.exists(mirada):
+			self.mirada_path = os.path.normpath(mirada)
+			self.log.info("Mirada executable path: %s", self.mirada_path)
+
 		# Default paths
 		cfgDefPaths = [item for item in cfg["file_path"] if item.get("folder_path", "") == "" and item.get("task_activity", "") == ""]
 		defPaths = cfgDefPaths[0] if len(cfgDefPaths) > 0 else defPaths
 
-		self.config_pool[unid] = (cfg, roots, defPaths, trans_mode, net_mode)
+		self.config_pool[unid] = (cfg, roots, defPaths, trans_mode, net_mode, save_mode)
 
 		self.log.info("Successfully loaded config for %s.", unid)
 
@@ -120,9 +140,10 @@ class Config(object):
 				self.defPaths = self.config_pool[unid][2]
 				self.trans_mode = self.config_pool[unid][3]
 				self.net_mode = self.config_pool[unid][4]
+				self.save_mode = self.config_pool[unid][5]
 
 	def load_task_file(self):
-		self.config_taskfile = jsonio.read(os.path.join(capp.configdir(), self.source_taskfile))
+		self.config_taskfile = jsonio.read(os.path.join(utils.configdir(), self.source_taskfile))
 
 	def save_task_file(self, task, filepath, version = None):
 		if task is None or filepath is None: return None
@@ -136,7 +157,10 @@ class Config(object):
 		self.config_taskfile[filepath]["version"] = version
 		self.config_taskfile[filepath]["time"] = (datetime.datetime.now() - datetime.datetime.fromtimestamp(0)).total_seconds()
 
-		jsonio.write(os.path.join(capp.configdir(), self.source_taskfile), self.config_taskfile)
+		jsonio.write(os.path.join(utils.configdir(), self.source_taskfile), self.config_taskfile)
+
+	def mirada(self):
+		return self.mirada_path
 		
 	def redirect_path(self, path):
 		if path is None: return None
@@ -174,7 +198,7 @@ class Config(object):
 			app_script = app_proc.get("script_path", None)
 			app_func = app_proc.get("function", None)
 			if app_script is not None and app_func is not None:
-				app_script = os.path.normpath(app_script) if os.path.isabs(app_script) else os.path.abspath(os.path.join(capp.plugin_dir(), app_script))
+				app_script = os.path.normpath(app_script) if os.path.isabs(app_script) else os.path.abspath(os.path.join(utils.plugin_dir(), app_script))
 				res = (app_script, app_func)
 
 		return res
@@ -214,48 +238,42 @@ class Config(object):
 		if len(root) == 0:
 			self.log.error('Task %s root is empty', task_path)
 
-		paths = ["preview", "publish", "version"]
+		paths = ["local", "publish", "version"]
 		task_valid = True
-		task_isparent = True
+		task_isparent = len(curPaths) > 0
 		token = r"$(url["
 
 		for key, url in curPaths.items():
-			if isinstance(url, (int, bool)) or len(url) == 0: continue
+			items = url[:] if isinstance(url, list) else [url]
 
-			items = url if isinstance(url, list) else [url]
+			if not isinstance(url, (int, bool)) and len(url) > 0:
+				for i in range(len(items)):
+					keys = re.findall(r"\$\(([^/\$]+)\)", items[i])
 
-			for i in range(len(items)):
-				keys = re.findall(r"\$\(([^/\$]+)\)", items[i])
+					for k in keys:
+						if not k in string_vars:
+							env_var = os.environ.get(k)
+							if env_var is not None:
+								string_vars[k] = env_var
+							else:
+								self.log.error('Variable %s not evaluated', k)
+								# TODO: raise error? set empty string?
+								pass
 
-				for k in keys:
-					if not k in string_vars:
-						env_var = os.environ.get(k)
-						if env_var is not None:
-							string_vars[k] = env_var
-						else:
-							self.log.error('Variable %s not evaluated', k)
-							# TODO: raise error? set empty string?
-							pass
+					for name, var in string_vars.items():
+						items[i] = items[i].replace(r"$({0})".format(name), var)
 
-				for name, var in string_vars.items():
-					items[i] = items[i].replace(r"$({0})".format(name), var)
-
-				if key in paths:
-					items[i] = os.path.normpath(os.path.join(root, items[i]))
-					if items[i].find(token) > 0:
-						task_isparent = False
+					if key in paths:
+						items[i] = os.path.normpath(os.path.join(root, items[i]))
+						task_isparent = task_isparent if items[i].find(token) < 0 else False
 
 			task_paths[key] = items if isinstance(url, list) else items[0]
 
-		# Set default values if empty
-		for key in paths:
-			task_paths.setdefault(key, "")
-
 		# Fill name list if provided
 		if isinstance(task_paths.get("name", u""), list):
-			task["name_list"] = task_paths.pop("name")
+			task_paths["name_list"] = task_paths.pop("name")
 		else:
-			task["name_list"] = [task_paths.get("name", u"")]
+			task_paths["name_list"] = [task_paths.get("name", u"")]
 
 		# Check if name is editable
 		is_name_editable = curPaths.get("name_editable", False)
@@ -266,7 +284,7 @@ class Config(object):
 
 		# Check for custom file name ...
 		custom_name = self.task_filenames.get(task["id"], '')
-		if (len(custom_name) > 0 and task["name_editable"]) or len(task["name_list"]) > 1:
+		if (len(custom_name) > 0 and task["name_editable"]) or len(task_paths["name_list"]) > 1:
 			task_paths["name"] = custom_name
 		elif len(task_paths.get("name", "")) == 0:
 			file_name = capp.file_name(self.log)
@@ -282,12 +300,20 @@ class Config(object):
 		task["valid_task"] = task_valid
 		task["valid_parent"] = task_isparent
 
-		local = task_paths["publish"] if len(task_paths["publish"]) > 0 else task_paths["version"]
+		# Set task publish status
+		task["publish_status"] = task_paths.get("publish_status", None)
+
+		# Set default local location
+		local = task_paths["publish"] if len(task_paths.get("publish", "")) > 0 else task_paths.get("version", "")
 		if self.net_mode == self.MODE_LOCAL and self.local_dir is not None:
 			local = local.replace(root, self.local_dir)
 
 		self.log.debug('Local self.local_dir: %s; local: %s', self.local_dir, local)
 		task_paths.setdefault('local', os.path.normpath(local))
+
+		# Set default values if empty
+		for key in paths:
+			task_paths.setdefault(key, "")
 
 		self.log.debug('%s', task_paths)
 		self.log.debug('Translate has been successfull.')
@@ -305,12 +331,13 @@ class Config(object):
 
 	def file_path(self, task):
 		if task is not None:
-			task_file_path = self.defPaths
 			task_path = task["path"] + task["name"]
 			task_parts = [p for p in task_path.split('/') if len(p) > 0]
 			task_path = '/'.join(task_parts)
 
-			for fp in self.config_task.get("file_path", {}):
+			# Config specifity
+			spec = {}
+			for fp in self.config_task.get("file_path", []):
 				activity = fp.get("task_activity", "")
 				folder = fp.get("folder_path", "")
 				# Default key skip
@@ -321,9 +348,11 @@ class Config(object):
 					folder = folder.replace(r"$(url[{0}])".format(i), p)
 
 				if (len(folder) == 0 or task_path.startswith(folder)) and (len(activity) == 0 or task["activity"] == activity):
-					task_file_path = fp
-					break
+					depth = len([ i for i in folder.replace('\\', '/').split('/') if len(i) > 0 ])
+					if not depth in spec or task["activity"] == activity:
+						spec[depth] = fp
 
-			return task_file_path
+			self.log.debug('file_path specifity: %s', spec)
+			return spec[max(spec)] if len(spec) > 0 else self.defPaths
 		else:
 			return self.defPaths

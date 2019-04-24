@@ -10,13 +10,14 @@ try:
 	import tentaculo.api.imaya.cerebroMaya
 	import tentaculo.api.imaya.userSetup
 except ImportError:
-		pass
+	pass
 		
 import tentaculo.core
 import tentaculo.core.jsonio
 import tentaculo.core.config
 import tentaculo.core.shot
 import tentaculo.core.capp
+import tentaculo.core.utils
 import tentaculo.core.clogger
 import tentaculo.core.paths
 import tentaculo.core.vfile
@@ -35,8 +36,9 @@ import tentaculo.gui.wapp
 import tentaculo.gui.wlinkedfiles
 import tentaculo.gui.wlogin
 import tentaculo.gui.wabout
+import tentaculo.gui.wmessage
 
-if tentaculo.core.capp.PY3:
+if tentaculo.core.utils.PY3:
 	from importlib import reload
 
 def reload_modules():
@@ -61,6 +63,7 @@ def reload_modules():
 
 	reload(tentaculo.core					)
 	reload(tentaculo.core.capp				)
+	reload(tentaculo.core.utils				)
 	reload(tentaculo.core.paths				)
 	reload(tentaculo.core.config			)
 	reload(tentaculo.core.clogger			)
@@ -81,4 +84,5 @@ def reload_modules():
 	reload(tentaculo.gui.wapp				)
 	reload(tentaculo.gui.wlogin				)
 	reload(tentaculo.gui.wabout				)
+	reload(tentaculo.gui.wmessage				)
 	reload(tentaculo.gui.wlinkedfiles		)

@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
-import sys, os, locale, platform, shutil, subprocess, tempfile
+import sys, os, platform
+# Reroute stdout & stderr if started without console
+if sys.executable.endswith("pythonw.exe"):
+	sys.stdout = open(os.devnull, "w")
+	sys.stderr = open(os.devnull, "w")
+
+from tentaculo.core import utils
 
 # Define messages display
 DEBUG = False
@@ -8,6 +14,9 @@ try:
 	DEBUG = debug.DEBUG
 except ImportError:
 	pass
+
+# Host window handle
+APP_HANDLE = None
 
 HOST = 0
 # Supported hosts
@@ -19,6 +28,7 @@ HOUDINI = 30
 BLENDER = 40
 C4D = 50
 MAX = 60
+KATANA = 70
 
 # Host file extensions
 MAYA_EXT = ['.ma', '.mb']
@@ -27,30 +37,9 @@ HOUDINI_EXT = ['.hip']
 MAX_EXT = ['.max']
 C4D_EXT = ['.c4d']
 BLENDER_EXT = ['.blend']
-HOST_EXT = MAYA_EXT + NUKE_EXT + HOUDINI_EXT + MAX_EXT + C4D_EXT + BLENDER_EXT
+KATANA_EXT = ['.katana']
+HOST_EXT = []
 HOST_NAME = 'Standalone'
-
-# Host os
-HOST_OS = platform.system().lower()
-# Python version
-PY3 = sys.version_info[0] == 3
-
-def plugin_dir():
-	pdir = os.environ.get("CTENTACULO_LOCATION")
-	if pdir is None:
-		cdir = os.path.dirname(os.path.realpath(__file__))
-		pdir = os.path.normpath(os.path.join(cdir, os.pardir, os.pardir))
-	return pdir
-
-def include_libs3():
-	# Libs3 paths
-	libs3 = [ os.path.join(plugin_dir(), "libs3", HOST_OS, "python3" if PY3 else "python2"), os.path.join(plugin_dir(), "libs3", "crossplatform") ]
-
-	for lib in libs3:
-		if os.path.exists(lib) and not lib in sys.path:
-			sys.path.append(lib)
-
-include_libs3()
 
 # Define host application
 try:
@@ -127,87 +116,44 @@ try:
 except ImportError:
 	pass
 
+try:
+	import Katana
+	from Katana import KatanaFile, UI4, NodegraphAPI
+	HOST = KATANA
+	HOST_NAME = 'katana'
+	HOST_EXT = KATANA_EXT
+	os.environ['QT_PREFERRED_BINDING'] = 'PyQt4'
+	os.environ['QT_SIP_API_HINT'] = '1'
+except ImportError:
+	pass
+
 from tentaculo import Qt
 
-if HOST == C4D or HOST == BLENDER:
-	if PY3:
-		Qt.QtCore.QCoreApplication.addLibraryPath(os.path.join(plugin_dir(), "libs3", HOST_OS, "python3", "PyQt5", "plugins"))
-	app = Qt.QtWidgets.QApplication(sys.argv)
+if HOST == C4D or HOST == BLENDER or HOST == STANDALONE:
+	if utils.PY3:
+		Qt.QtCore.QCoreApplication.addLibraryPath(os.path.join(utils.plugin_dir(), "libs3", utils.HOST_OS, "python3", "PyQt5", "plugins"))
+	if not Qt.QtCore.QCoreApplication.instance():
+		app = Qt.QtWidgets.QApplication(sys.argv)
+		app.setWindowIcon(Qt.QtGui.QIcon(utils.getResDir("icon.png")))
 
 QT5 = Qt.__binding__ in ["PySide2", "PyQt5"]
 
+def set_standalone_host(hostname):
+	global HOST_EXT, HOST_NAME
+	if hostname is None or len(hostname) == 0: return False
 
-def string_unicode(string):
-	if PY3:
-		if not isinstance(string, str):
-			string = str(string.decode('utf-8'))
+	HOST_NAME = hostname
+
+	if HOST_NAME == "revit":
+		HOST_EXT = ['.rvt']
+	elif HOST_NAME == "autocad":
+		HOST_EXT = ['.dwg']
+	elif HOST_NAME == "tbharmony":
+		HOST_EXT = ['.xstage']
 	else:
-		if not isinstance(string, unicode):
-			try:
-				string = unicode(string.decode('utf-8'))
-			except:
-				string = unicode(string.decode(locale.getpreferredencoding()))
-	return string
+		HOST_EXT = ['.none']
+		return False
 
-def string_byte(string):
-	if PY3:
-		if isinstance(string, str):
-			string = string.encode('utf-8')
-	else:
-		if isinstance(string, unicode):
-			string = string.encode('utf-8')
-	return string
-
-def debugMsg(msg = None):
-	if DEBUG is True:
-		print(msg)
-
-def showDir(fullpath = None):
-	if fullpath is None: return
-	
-	path = os.path.normpath(fullpath)
-
-	if not os.path.exists(path):
-		debugMsg(u"[!] Path doesn't exist : {0}".format(path))
-		return None
-
-	if HOST_OS == "windows":
-		if not os.path.isfile(path):
-			cmd = u'explorer "{0}"'.format(path)
-			if not PY3: cmd = cmd.encode(locale.getpreferredencoding())
-			subprocess.Popen(cmd)
-		else:
-			cmd = u'explorer /select,"{0}"'.format(path)
-			if not PY3: cmd = cmd.encode(locale.getpreferredencoding())
-			subprocess.Popen(cmd)
-	elif HOST_OS == "darwin":
-		subprocess.call(['open', '-R', path])
-	elif HOST_OS == "linux":
-		subprocess.Popen(['xdg-open', path])
-
-def copyToClipboard(text = None):
-	if text is None: return
-	clipboard = Qt.QtWidgets.QApplication.clipboard()
-	clipboard.setText(text)
-
-def getResDir(fname = None):
-	if fname is None: fname = ""
-	cdir = os.path.dirname(os.path.realpath(__file__))
-	resdir = os.path.abspath(os.path.join(cdir, os.pardir, "resources", fname))
-	return resdir
-
-def makeFolders(paths = None):
-	if paths is None: return False
-	badflag = False
-	sort_dict = sorted(paths.values())
-	for path in sort_dict:
-		# TODO: only work with paths? Badflag is no good.
-		if os.sep in path or os.altsep in path:
-			try:
-				os.makedirs(path)
-			except OSError as e:
-				badflag = True
-	if badflag: return False
 	return True
 
 def open_file(log, filepath, origin_path = None):
@@ -217,7 +163,8 @@ def open_file(log, filepath, origin_path = None):
 	if origin_path is None: origin_path = filepath
 
 	if HOST == STANDALONE:
-		log.debug('Open: Standalone {0}'.format(fname))
+		from tentaculo.api import standalone
+		standalone.message_function("open_file", [filepath])
 	elif HOST == MAYA or HOST == MAYA2:
 		check_workspace_maya(log, origin_path)
 		mc.file(new = True, force = True)
@@ -229,7 +176,7 @@ def open_file(log, filepath, origin_path = None):
 		nuke.scriptOpen(filepath)
 		log.debug("Nuke opened %s", filepath)
 	elif HOST == HOUDINI:
-		hou.hipFile.load(filepath.replace('\\', '/'), suppress_save_prompt = True)
+		hou.hipFile.load(filepath.replace('\\', '/')) #, suppress_save_prompt = True)
 		log.debug("Houdini opened %s", filepath)
 	elif HOST == MAX:
 		MaxPlus.FileManager.Open(filepath)
@@ -240,8 +187,31 @@ def open_file(log, filepath, origin_path = None):
 	elif HOST == BLENDER:
 		bpy.ops.wm.open_mainfile(filepath = filepath)
 		log.debug("Blender opened %s", filepath)
+	elif HOST == KATANA:
+		KatanaFile.Load(filepath)
 
 	return filepath
+
+def close_file():
+	if HOST == STANDALONE:
+		from tentaculo.api import standalone
+		standalone.message_function("close_file")
+	elif HOST == MAYA or HOST == MAYA2:
+		mc.file(new = True, force = True)
+	elif HOST == NUKE:
+		nuke.scriptClear()
+	elif HOST == HOUDINI:
+		hou.hipFile.clear(suppress_save_prompt = True)
+	elif HOST == MAX:
+		MaxPlus.FileManager.Reset(noPrompt = True)
+	elif HOST == C4D:
+		c4d.documents.CloseAllDocuments()
+	elif HOST == BLENDER:
+		bpy.ops.wm.read_homefile()
+	elif HOST == KATANA:
+		KatanaFile.New()
+
+	return True
 
 def create_file(log, filepath, origin_path = None):
 	dir = os.path.dirname(filepath)
@@ -251,7 +221,8 @@ def create_file(log, filepath, origin_path = None):
 	if origin_path is None: origin_path = filepath
 
 	if HOST == STANDALONE:
-		log.debug("New file: Standalone")
+		from tentaculo.api import standalone
+		standalone.message_function("create_file", [filepath])
 	elif HOST == MAYA or HOST == MAYA2:
 		check_workspace_maya(log, origin_path)
 		mc.file(new = True, force = True)
@@ -275,6 +246,9 @@ def create_file(log, filepath, origin_path = None):
 	elif HOST == BLENDER:
 		bpy.ops.wm.read_homefile()
 		bpy.ops.wm.save_mainfile(filepath = filepath, check_existing = False)
+	elif HOST == KATANA:
+		KatanaFile.New()
+		KatanaFile.Save(filepath)
 
 	return filepath
 
@@ -282,7 +256,8 @@ def file_name(log):
 	file_name = None
 
 	if HOST == STANDALONE:
-		log.debug("Request file name: Standalone")
+		from tentaculo.api import standalone
+		file_name = standalone.message_function("file_name")[0]
 	elif HOST == MAYA or HOST == MAYA2:
 		file_name = os.path.normpath(mc.file(query = True, sceneName = True))
 	elif HOST == NUKE:
@@ -298,6 +273,8 @@ def file_name(log):
 	elif HOST == BLENDER:
 		if bpy.data.is_saved:
 			file_name = bpy.data.filepath
+	elif HOST == KATANA:
+		file_name = NodegraphAPI.NodegraphGlobals.GetProjectAssetID()
 
 	return file_name
 
@@ -305,7 +282,8 @@ def save_query(log):
 	cancel = False
 
 	if HOST == STANDALONE:
-		log.debug("Query user file save: Standalone")
+		from tentaculo.api import standalone
+		cancel = standalone.message_function("save_query")[0]
 	elif HOST == MAYA or HOST == MAYA2:
 		file_name = mc.file(query = True, sceneName = True)
 		need_save = mc.file(query = True, modified = True)
@@ -332,6 +310,16 @@ def save_query(log):
 		if bpy.data.is_dirty:
 			bpy.ops.wm.save_mainfile(check_existing = True)
 			cancel = bpy.data.is_dirty
+	elif HOST == KATANA:
+		if KatanaFile.IsFileDirty():
+			mb = UI4.App.Application.QtGui.QMessageBox(app_window())
+			mb.setText("Closing file")
+			mb.setInformativeText("Save current file?")
+			mb.setStandardButtons(UI4.App.Application.QtGui.QMessageBox.Yes | UI4.App.Application.QtGui.QMessageBox.No | UI4.App.Application.QtGui.QMessageBox.Cancel)
+			ret = mb.exec_()
+			if ret == UI4.App.Application.QtGui.QMessageBox.Yes:
+				KatanaFile.Save(NodegraphAPI.NodegraphGlobals.GetProjectAssetID())
+			cancel = ret == UI4.App.Application.QtGui.QMessageBox.Cancel
 
 	return not cancel
 
@@ -340,32 +328,28 @@ def save_file(log, fname = None):
 	file_path = fname
 
 	if HOST == STANDALONE:
-		log.debug("Save: Standalone {0}".format(file_path))
+		from tentaculo.api import standalone
+		standalone.message_function("save_file", [file_path])
 	elif HOST == MAYA or HOST == MAYA2:
-		savef = mc.file(query = True, sceneName = True)
-		#if len(savef) == 0:
 		mc.file(rename = file_path)
-		savef = mc.file(save = True, type = "mayaAscii")
+		file_path = mc.file(save = True, type = "mayaAscii")
 	elif HOST == NUKE:
-		savef = file_path
 		nuke.scriptSaveAs(file_path, overwrite = 1)
 	elif HOST == HOUDINI:
 		hou.hipFile.setName(file_path)
 		hou.hipFile.save()
-		savef = os.path.normpath(file_path)
 	elif HOST == MAX:
-		savef = file_path
 		MaxPlus.FileManager.Save(file_path)
 	elif HOST == C4D:
-		savef = file_path
 		doc = c4d.documents.GetActiveDocument()
 		if doc is not None:
 			c4d.documents.SaveDocument(doc, str(file_path), c4d.SAVEDOCUMENTFLAGS_0, c4d.FORMAT_C4DEXPORT)
 	elif HOST == BLENDER:
-		savef = file_path
 		bpy.ops.wm.save_mainfile(filepath = file_path)
+	elif HOST == KATANA:
+		KatanaFile.Save(file_path)
 
-	return savef
+	return file_path
 
 def import_file(log, fname = None, as_reference = False):
 	if fname is None or not os.path.exists(fname):
@@ -373,7 +357,8 @@ def import_file(log, fname = None, as_reference = False):
 		return False
 
 	if HOST == STANDALONE:
-		log.debug("Import: Standalone %s", fname)
+		from tentaculo.api import standalone
+		standalone.message_function("import_file", [fname, as_reference])
 	elif HOST == MAYA or HOST == MAYA2:
 		log.debug("Import: Maya %s", fname)
 		if as_reference:
@@ -420,37 +405,48 @@ def import_file(log, fname = None, as_reference = False):
 			if obj is not None:
 				bpy.context.scene.objects.link(obj)
 				obj.select = True
+	elif HOST == KATANA:
+		if as_reference:
+			pass
+		else:
+			KatanaFile.Import(fname)
 
 	return True
 
 # Global app_window(): choose the main parent window depending on environment
 def app_window():
-	parent = None
-	if HOST == MAYA or HOST == MAYA2:
-		mayaMainWindowPtr = omui.MQtUtil.mainWindow()
-		mayaMainWindow = wrapInstance(long(mayaMainWindowPtr), Qt.QtWidgets.QWidget)
-		parent = mayaMainWindow
-	elif HOST == HOUDINI:
-		#hou.ui.mainQtWindow()
-		parent = hou.qt.mainWindow()
-	elif HOST == NUKE:
-		for obj in Qt.QtWidgets.QApplication.topLevelWidgets():
-			if (obj.inherits('QMainWindow') and	obj.metaObject().className() == 'Foundry::UI::DockMainWindow'):
-				parent = obj
-	elif HOST == MAX:
-		try:
-			parent = MaxPlus.GetQMaxMainWindow() if QT5 else MaxPlus.GetQMaxWindow()
-		except:
-			# Max 2016
-			pass
-	elif HOST == C4D:
-		# TODO: No Qt windows. Mb transform main window handle?
-		pass
-	elif HOST == BLENDER:
-		# TODO: No Qt windows. Mb transform main window handle?
-		pass
+	global APP_HANDLE
 
-	return parent
+	if APP_HANDLE == None:
+		if HOST == MAYA or HOST == MAYA2:
+			mayaMainWindowPtr = omui.MQtUtil.mainWindow()
+			mayaMainWindow = wrapInstance(long(mayaMainWindowPtr), Qt.QtWidgets.QWidget)
+			APP_HANDLE = mayaMainWindow
+		elif HOST == HOUDINI:
+			#hou.ui.mainQtWindow()
+			APP_HANDLE = hou.qt.mainWindow()
+		elif HOST == NUKE:
+			for obj in Qt.QtWidgets.QApplication.topLevelWidgets():
+				if (obj.inherits('QMainWindow') and	obj.metaObject().className() == 'Foundry::UI::DockMainWindow'):
+					APP_HANDLE = obj
+		elif HOST == MAX:
+			try:
+				APP_HANDLE = MaxPlus.GetQMaxMainWindow() if QT5 else MaxPlus.GetQMaxWindow()
+			except:
+				# Max 2016
+				pass
+		elif HOST == C4D:
+			# TODO: No Qt windows. Mb transform main window handle?
+			pass
+		elif HOST == BLENDER:
+			# TODO: No Qt windows. Mb transform main window handle?
+			pass
+		elif HOST == KATANA:
+			for obj in UI4.App.Application.QtGui.qApp.topLevelWidgets():
+				if type(obj).__name__ == 'KatanaWindow':
+				   APP_HANDLE = obj
+
+	return APP_HANDLE
 
 # Focus in/out host for host application
 
@@ -467,6 +463,8 @@ def focus_in():
 		pass
 	elif HOST == BLENDER:
 		pass
+	elif HOST == KATANA:
+		pass
 
 def focus_out():
 	if HOST == MAYA or HOST == MAYA2:
@@ -481,16 +479,8 @@ def focus_out():
 		pass
 	elif HOST == BLENDER:
 		pass
-
-# Global clearUI(): delete window UI if necessary
-def clearUI(window = None):
-	if not window is None:
-		if HOST == MAYA or HOST == MAYA2:
-			if pm.window(window, q=True, exists=True):
-				pm.deleteUI(window)
-
-def platform_name():
-	return platform.system().lower()
+	elif HOST == KATANA:
+		pass
 
 def check_workspace_maya(log, path):
 	if path is None: return None
@@ -518,44 +508,12 @@ def check_workspace_maya(log, path):
 
 	return ws_dir
 
-def appdatadir():
-		host = platform_name()
-		home = None
-		if host == 'windows':
-			home = os.environ.get('APPDATA', None)
-		elif host == 'linux':
-			home =  os.path.expanduser('~')			
-		elif host == 'darwin':
-			home = os.path.expanduser('~')
-		
-		if home is None or not os.path.exists(home):
-			raise IOException('HOME directory does not exist: %s' % home)
+def copyToClipboard(text = None):
+	if text is None: return
+	clipboard = Qt.QtWidgets.QApplication.clipboard()
+	clipboard.setText(text)
 
-		return home
 
-def homedir():	
-	home = os.path.expanduser('~')	
-	if home is None or not os.path.exists(home):
-		raise IOException('HOME directory does not exist: %s' % home)
-
-	return os.path.normpath(home)
-
-def configdir():
-	'''
-	Returns Cerebro config files directory
-	'''
-	path = appdatadir()
-	plat = platform_name()
-	cerebro = 'cerebro'	
-	if plat == 'linux':	
-		cerebro = '.cerebro'	
-
-	path = os.path.normcase(os.path.join(path, cerebro))
-	return path
-
-def tempdir():
-    temp = tempfile.gettempdir()
-    return os.path.normpath(os.path.join(temp, 'tempCerebro'))
 
 if DEBUG is True:
 	if HOST == STANDALONE:

@@ -1,75 +1,135 @@
 # -*- coding: utf-8 -*-
+import cerebro, sys, os
 
-import cerebro
-import os
-from ctentaculo.client import site_config
-from ctentaculo.client import core
-from ctentaculo.client import py_cerebro
+if not hasattr(sys, 'argv'):
+    sys.argv  = ['']
 
-conf = 'path_config'
-host = 'db.cerebrohq.com'
-port =  45432
+dn = os.path.normpath(os.path.dirname(__file__))
+if not dn in sys.path:
+	sys.path.append(dn)
+
+from tentaculo.core import utils, config, jsonio
+from tentaculo.api.icerebro import db
+
+def cerebro_message(text):
+	cerebro.gui.information_box("Cerebro Tentaculo", text)
 
 def connect_db():
-	db = py_cerebro.database.Database(host, port)
+	conn = db.Db()
 
-	if db.connect_from_cerebro_client() != 0:
-		raise Exception('Connection to database failed!')
+	if not conn.client_login():
+		raise Exception("Connection to database failed!")
 
-	return db
-
-def cur_task_name():
-	task = cerebro.core.current_task()
-
-	return task.parent_url() + task.name()	
-
-def get_dict(val):
-	ret_val = None
-	config = site_config.Config(conf)
-	dict = config.translate(cur_task_name())
-
-	if not dict is None:
-		if val in dict.keys():
-			ret_val = dict.get(val)
-		else:
-			cerebro.gui.critical_box('Dict Error', 'Value "' + val + '" not found in dictionary!')
-
-	return ret_val
+	return conn
 
 def browse():
-	ver = get_dict('version')
+	try:
+		db = connect_db()
+		conf = config.Config()
+		task_data = cerebro.core.current_task().data()
 
-	if not ver is None: # and os.path.exists(ver)
-		host = core.hostapp.getHost()
+		task = db.task(task_data[cerebro.aclasses.Task.DATA_ID])
+		task_paths = conf.translate(task)
+		if task_paths is not None:
+			opened = utils.show_dir(task_paths["version"] if task_paths.get("publish", None) is None else task_paths["publish"])
+			if not opened:
+				cerebro_message("Task folder does not exist!")
+		else:
+			cerebro_message("Task translation failed!")
 
-		if host == 'windows':
-			os.system('explorer /select,"' + os.path.normpath(ver) + '"')
-		elif host == 'linux':
-			os.system('xdg-open "%s"' % ver)
-		elif host == 'macos':
-			os.system('open "%s"' % ver)
-	else:
-		cerebro.gui.critical_box('Path Error', 'Path "' + str(ver) + '" not found!')
+	except Exception as e:
+		cerebro_message(repr(e))
 
 def make_dirs():
-	db = connect_db()
+	# Config lookup keys
+	path_list = ["version", "publish", "local"]
+	try:
+		db = connect_db()
+		conf = config.Config()
 
-	prj_ids = '{' + str(cerebro.core.current_task().data()[cerebro.aclasses.Task.DATA_PROJECT_ID]) + '}'
+		# Additional config file for browse operations
+		browse_cfg = jsonio.read(os.path.join(utils.plugin_dir(), "browse_config.json"))
+		ts_cfg = []
 
-	query_text = "t.flags & 0000001 = 0"
-	query_text += " and (\"taskFlags\"(t.uid, get_usid()) & 4294967296) = 0"
-	query_text += " and (lower(t.cc_url) like lower('%{0}%'))".format(cur_task_name())
-	tasks_list = db.execute("select * from \"search_Tasks\"(%s::bigint[], ''::text, %s::text, 1000);", prj_ids , query_text)
+		for val in browse_cfg.get("task_structure", []):
+			try:
+				valid = [ i for i in val.get("structure", []) if i.get("root", None) in path_list and i.get("dirs", None) is not None ]
+			except AttributeError as e:
+				raise AttributeError("Invalid structure value for [{0}, {1}]. {2}".format(
+					val.get("folder_path", "{no path}"), val.get("task_activity", "{no activity}"), repr(e)))
 
-	id_tasks_list = []
-	for id in tasks_list:
-		id_tasks_list.append(id[0])
+			if len(valid) > 0:
+				ts_cfg.append({
+					"folder_path": val.get("folder_path", ""),
+					"task_activity": val.get("task_activity", ""),
+					"structure": valid
+					})
+		
+		# Count number of folders created and errors
+		nsuccess, nerror = 0, 0
 
-	tasks = db.tasks(id_tasks_list)
+		cerebro_selected = cerebro.core.selected_tasks()
+		for cerebro_task in cerebro_selected:
+			# Get active task data from Cerebro
+			#cerebro_task = cerebro.core.current_task()
+			cerebro_task_data = cerebro_task.data()
 
-	config = site_config.Config(conf)
-	for task in tasks:
-		dict = config.translate(task[py_cerebro.dbtypes.TASK_DATA_PARENT_URL] + task[py_cerebro.dbtypes.TASK_DATA_NAME], task[py_cerebro.dbtypes.TASK_DATA_ACTIVITY_NAME])
-		config.makeFolders(dict)
+			# Query all child tasks
+			prj_ids = '{' + str(cerebro_task_data[cerebro.aclasses.Task.DATA_PROJECT_ID]) + '}'
 
-	cerebro.gui.information_box('Done', 'Directories structure created!')
+			query_text = "t.flags & 0000001 = 0"
+			query_text += " and (\"taskFlags\"(t.uid, get_usid()) & 4294967296) = 0"
+			query_text += " and (lower(t.cc_url) like lower('%{0}%'))".format(cerebro_task.parent_url() + cerebro_task.name())
+			tasks_list = [ t[0] for t in db.db.execute("select * from \"search_Tasks\"(%s::bigint[], ''::text, %s::text, 1000);", prj_ids , query_text) ]
+		
+			# Add current task
+			#tasks_list.append(cerebro_task_data[cerebro.aclasses.Task.DATA_ID])
+
+			tsks = db.db.tasks(tasks_list)
+			db.update_tasks(tsks)
+
+			for t in tasks_list:
+				task = db.task(t)
+				task_paths = conf.translate(task)
+				if task_paths is not None:
+					# Create config-based folder structure
+					for p in path_list:
+						path = task_paths.get(p, None)
+						if path is not None and not os.path.exists(path):
+							os.makedirs(path)
+							nsuccess += 1
+
+					# Create additional folder structure
+					task_parts = [p for p in (task["path"] + task["name"]).split('/') if len(p) > 0]
+					task_path = '/'.join(task_parts)
+					# Config specifity
+					spec = {}
+					for val in ts_cfg:
+						activity, folder = val["task_activity"], val["folder_path"]
+						folder = folder[1:] if folder.startswith('/') else folder
+						# Path substitute
+						for i, p in enumerate(task_parts):
+							folder = folder.replace(r"$(url[{0}])".format(i), p)
+
+						if (len(folder) == 0 or task_path.startswith(folder)) and (len(activity) == 0 or task["activity"] == activity):
+							for ts in val["structure"]:
+								if task_paths.get(ts["root"], None) is not None:
+									spec[len([ i for i in folder.replace('\\', '/').split('/') if len(i) > 0 ]) + (1 if len(activity) > 0 else 0)] = ts
+
+					if len(spec) > 0:
+						ts = spec[max(spec)]
+						for p in ts["dirs"] if isinstance(ts["dirs"], list) else [ts["dirs"]]:
+							path = os.path.join(task_paths[ts["root"]], p)
+							if path is not None and not os.path.exists(path):
+								os.makedirs(path)
+								nsuccess += 1
+				else:
+					nerror += 1
+
+		if nsuccess > 0:
+			cerebro_message("Successfully created {0} task(s) folders. [{1} error(s)]".format(nsuccess, nerror))
+		else:
+			cerebro_message("No task(s) folders created. [{0} error(s)]".format(nerror))
+		
+	except Exception as e:
+		cerebro_message(repr(e))

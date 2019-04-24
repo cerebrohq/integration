@@ -2,7 +2,11 @@
 
 from __future__ import print_function
 from distutils import dir_util
-import os, sys, platform, shutil, re, datetime, logging, tempfile, inspect, json, codecs
+import os, platform, shutil, re, datetime, logging, tempfile, inspect, json, codecs
+try:
+	import winreg
+except:
+	pass
 
 try:
 	from PyQt5.QtCore import *
@@ -135,7 +139,7 @@ def installed_path():
 	if data is not None:
 		path = data.get("path", None)
 		if path is not None:
-			path = os.path.normpath(path)
+			path = np(path)
 
 	return path
 
@@ -149,6 +153,10 @@ def host_apps():
 	prefs["Houdini"] = host_houdini()
 	prefs["Cinema 4D"] = host_c4d()
 	prefs["Blender"] = host_blender()
+	prefs["Autocad"] = host_autocad()
+	prefs["Revit"] = host_revit()
+	prefs["Toon Boom"] = host_tbharmony()
+	prefs["Katana"] = host_katana()
 
 	return prefs
 
@@ -244,6 +252,7 @@ def host_blender():
 			paths.extend(folders)
 		lookup_path = os.path.join(lookup_path, "blender foundation", "blender")
 	elif HOST_OS == 'linux':
+		lookup_path = os.path.join(lookup_path, ".config", "blender")
 		pass
 	elif HOST_OS == 'darwin':
 		lookup_path = os.path.normpath("/Applications/Blender/blender.app/Contents/Resources")
@@ -253,38 +262,99 @@ def host_blender():
 
 	return paths
 
+def host_autocad():
+	paths = []
+	lookup_path = appdata_dir()
+
+	if HOST_OS == 'windows':
+		lookup_path = os.path.join(lookup_path, "Autodesk")
+	elif HOST_OS == 'linux':
+		pass
+	elif HOST_OS == 'darwin':
+		pass
+
+	if len(paths) == 0:
+		paths = find_apps(lookup_path, "ApplicationPlugins")
+
+	return paths
+
+def host_revit():
+	paths = []
+	lookup_path = appdata_dir()
+
+	if HOST_OS == 'windows':
+		lookup_path = os.path.join(lookup_path, "Autodesk", "Revit", "Addins")
+	elif HOST_OS == 'linux':
+		pass
+	elif HOST_OS == 'darwin':
+		pass
+
+	if len(paths) == 0:
+		paths = find_apps(lookup_path, "20")
+
+	return paths
+
+def host_tbharmony():
+	paths = []
+	lookup_path = appdata_dir()
+
+	if HOST_OS == 'windows':
+		lookup_path = os.path.join(lookup_path, "Toon Boom Animation", "Toon Boom Harmony Essentials")
+	elif HOST_OS == 'linux':
+		pass
+	elif HOST_OS == 'darwin':
+		pass
+
+	if len(paths) == 0:
+		paths = find_apps(lookup_path, "-scripts")
+
+	return paths
+
+def host_katana():
+	paths = []
+	lookup_path = appdata_dir()
+
+	if HOST_OS == 'windows':
+		paths = install_paths("katana")
+	elif HOST_OS == 'linux':
+		pass
+	elif HOST_OS == 'darwin':
+		pass
+
+	if len(paths) == 0:
+		paths = find_apps(lookup_path, "katana")
+
+	return paths
+
+
 # PATHS LOOKUP
 def install_paths(appname):
 	appname = appname.lower()
 	app_paths = []
 
 	if HOST_OS == 'windows':
-		try:
-			import winreg
-		except:
-			raise Exception("Failed to access Windows registry")
-
 		base_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", 0, (winreg.KEY_WOW64_64KEY + winreg.KEY_READ))
 		size = winreg.QueryInfoKey(base_key)[0]
 
 		for i in range(size):
 			name = winreg.EnumKey(base_key, i)
-			app_key = winreg.OpenKey(base_key, name, 0, (winreg.KEY_WOW64_64KEY + winreg.KEY_READ))
-			try:
-				display_name = winreg.QueryValueEx(app_key, "DisplayName")[0]
-				if appname in display_name.lower():
-					try:
-						path = os.path.normpath(winreg.QueryValueEx(app_key, "InstallLocation")[0])
-						if not path in app_paths:
-							app_paths.append(path)
-					except:
-						pass
-			except:
-				pass
+			with winreg.OpenKey(base_key, name, 0, (winreg.KEY_WOW64_64KEY + winreg.KEY_READ)) as app_key:
+				try:
+					display_name = winreg.QueryValueEx(app_key, "DisplayName")[0]
+					if appname in display_name.lower():
+						try:
+							path = np(winreg.QueryValueEx(app_key, "InstallLocation")[0])
+							if not path in app_paths:
+								app_paths.append(path)
+						except:
+							pass
+				except:
+					pass
 
 	return app_paths
 
 def find_apps(folder, token):
+	token = token.lower()
 	app_paths = []
 	if not os.path.exists(folder): return app_paths
 
@@ -320,36 +390,47 @@ def copy_tree(src, dst, clean = False, exclude_list = []):
 		except Exception as err:
 			raise Exception("Error copying files: {0}".format(str(err)))
 
+def np(path):
+	if path is None: return path
+	
+	path = os.path.normcase(os.path.normpath(path))
+	if HOST_OS == "windows" and path.startswith('\\') and not path.startswith('\\\\'):
+		path = '\\' + path
+	
+	return path
+
 # ENVIRONMENT CLEAR
 def evar_clear_win(token):
-	token = os.path.normpath(token).lower()
+	token = np(token)
 	sep = os.path.pathsep
 	vars = ["PYTHONPATH", "NUKE_PATH", "PATH", "MAYA_MODULE_PATH", "MAYA_SCRIPT_PATH", "HOUDINI_MENU_PATH"]
 	for var in vars:
 		path_string = ""
 
 		try:
-			import winreg
-		except:
-			raise Exception("Failed to access Windows registry")
-
-		try:
-			key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, (winreg.KEY_WOW64_64KEY + winreg.KEY_READ))
-			path_string = winreg.QueryValueEx(key, var)[0]
-			key.Close()
+			with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, (winreg.KEY_WOW64_64KEY + winreg.KEY_READ)) as key:
+				path_string = winreg.QueryValueEx(key, var)[0]
 		except:
 			pass
 
 		if path_string is None or len(path_string) == 0: continue
 
-		paths = [p for p in path_string.split(sep) if len(p) > 0 and not token in os.path.normpath(p).lower()]
+		paths = [p for p in path_string.split(sep) if len(p) > 0 and not token in np(p)]
 		if len(paths) > 0:
 			path_string = os.path.normpath(re.sub("[;]+", ';', sep.join(paths)))
-			cmd = r'setx {0} "{1}"'.format(var, path_string)
-			os.system(cmd)
+			try:
+				with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, (winreg.KEY_WOW64_64KEY + winreg.KEY_WRITE)) as key:
+					winreg.SetValueEx(key, var, 0, winreg.REG_EXPAND_SZ, path_string)
+			except:
+				cmd = r'setx {0} "{1}"'.format(var, path_string)
+				os.system(cmd)
 		else:
-			cmd = r'SETX {0} "" & REG delete HKCU\Environment /F /V {0}'.format(var)
-			os.system(cmd)
+			try:
+				with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, (winreg.KEY_WOW64_64KEY + winreg.KEY_SET_VALUE)) as key:
+					winreg.DeleteValue(key, var)
+			except:
+				cmd = r'SETX {0} "" & REG delete HKCU\Environment /F /V {0}'.format(var)
+				os.system(cmd)
 
 
 class w_installer(QWidget):
@@ -411,12 +492,14 @@ class w_installer(QWidget):
 		if message is None: return
 		self.log.debug(message)
 		self.statusbar.showMessage(message)
+		QApplication.processEvents()
 
 	def progress(self, value = 0.0):
 		if value == 0.0:
 			self.progressbar.reset()
 		else:
 			self.progressbar.setValue(value)
+		QApplication.processEvents()
 
 	def w_install_dir(self):
 		global SETUP_NETWORK
@@ -462,15 +545,22 @@ class w_installer(QWidget):
 					self.install_system()
 					self.progress(60)
 					self.install_maya()
-					self.progress(70)
+					self.progress(65)
 					self.install_max()
-					self.progress(75)
+					self.progress(70)
 					self.install_houdini()
-					self.progress(80)
+					self.progress(75)
 					self.install_nuke()
-					self.progress(90)
+					self.progress(80)
 					self.install_c4d()
+					self.progress(85)
 					self.install_blender()
+					self.progress(90)
+					self.install_autocad()
+					self.progress(95)
+					self.install_revit()
+					self.install_tbharmony()
+					self.install_katana()
 
 				self.progress(100)
 				result = True
@@ -490,25 +580,25 @@ class w_installer(QWidget):
 		
 		if HOST_OS == "windows":
 			# Screen scale factor
-			varstr = os.environ.get("QT_AUTO_SCREEN_SCALE_FACTOR", None)
-			if varstr is None or varstr != "1":
-				os.system('setx QT_AUTO_SCREEN_SCALE_FACTOR "1"')
+			self.evar_set_win("QT_AUTO_SCREEN_SCALE_FACTOR", ["1"], True)
 
 			# CTENTACULO_LOCATION
 			self.evar_set_win(PLUGIN_EVAR, [self.dir_install], True)
 			# PYTHONPATH
 			adds = [r'', r'tentaculo']
 			paths = [ os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), p)) for p in adds ]
-			#paths = [os.path.abspath(os.path.join(self.dir_install, p)) for p in adds]
-			#paths.append(os.path.abspath(os.path.join(self.dir_install, os.pardir)))
 
 			self.evar_set_win("PYTHONPATH", paths)
+			# PATH
+			self.evar_set_win("PATH", [os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r'python'))])
+
 		elif HOST_OS == "linux":
 			self.evar_setup_linux()
 		elif HOST_OS == "darwin":
 			self.evar_setup_mac()
 
 	def install_cerebro(self):
+		global INST_STANDALONE
 		# target dir
 		if self.dir_cfg == '':
 			return False
@@ -524,9 +614,18 @@ class w_installer(QWidget):
 				shutil.copy(fullpath, self.dir_cfg)
 		self.status('Cerebro config files have been updated')
 
+		data = dict()
+		data['date'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+		data['path'] = self.dir_install
+		data['version'] = version.APP_VERSION_INT
+		data['version_str'] = version.APP_VERSION
+		if INST_STANDALONE is not True:
+			data['cerebro_path'] = os.path.normpath(cerebro.core.application_dir())
+		jsonwrite(FCONFIG, data)
+		self.status('Installer config file has been written')
+
 	def install_files(self):
 		global SETUP_NETWORK
-		global INST_STANDALONE
 		global PLUGIN_EVAR
 		result = False
 		exit_host_msg = 'please exit all the host applications before install'
@@ -544,19 +643,11 @@ class w_installer(QWidget):
 
 			result = True
 		except Exception as err:
+			self.log.error(repr(err))
 			self.status(inspect.stack()[0][3]+' failed, ' + exit_host_msg)
 			raise Exception("Install files copy failed")	
 
 		self.status('Files copied successfully')
-		data = dict()
-		data['date'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-		data['path'] = self.dir_install
-		data['version'] = version.APP_VERSION_INT
-		data['version_str'] = version.APP_VERSION
-		if INST_STANDALONE is not True:
-			data['cerebro_path'] = os.path.normpath(cerebro.core.application_dir())
-		jsonwrite(FCONFIG, data)
-		self.status('Installer config file has been written')
 		# Net install
 		if SETUP_NETWORK:
 			with codecs.open(os.path.join(self.dir_install, "net_install.py"), "w", "utf-8") as fh:
@@ -566,6 +657,7 @@ class w_installer(QWidget):
 					"PATH": [os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/imax"))],
 					"NUKE_PATH": [os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/inuke"))],
 					"HOUDINI_MENU_PATH": [os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/ihoudini"))],
+					"KATANA_RESOURCES": [os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/ikatana"))],
 					"PYTHONPATH": [
 						os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/imaya")),
 						os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/imax")),
@@ -622,7 +714,7 @@ class w_installer(QWidget):
 		if HOST_OS == "windows":
 			#dir = os.path.abspath(os.path.join(self.dir_install, r"tentaculo/api/ihoudini"))
 			dir = os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/ihoudini"))
-			self.evar_set_win("HOUDINI_MENU_PATH", [dir, '&'])
+			self.evar_set_win("HOUDINI_MENU_PATH", ['&', dir])
 
 	def install_c4d(self):
 		if len(self.apps["Cinema 4D"]) == 0 : return False
@@ -655,38 +747,82 @@ class w_installer(QWidget):
 					self.log.error("Unable to copy {0} to {1}".format(src_file, copy_dir))
 					cerebro_message("Manual copy required! {0} to {1}".format(src_file, copy_dir))
 
+	def install_autocad(self):
+		if len(self.apps["Autocad"]) == 0 : return False
+
+		plugin_dir = os.path.join(self.dir_source, r"tentaculo/api/iautocad")
+		for dir in self.apps["Autocad"]:
+			try:
+				copy_tree(plugin_dir, dir)
+			except:
+				self.log.error("Unable to copy {0} to {1}".format(plugin_dir, dir))
+				cerebro_message("Manual copy required! {0} to {1}".format(plugin_dir, dir))
+
+	def install_revit(self):
+		if len(self.apps["Revit"]) == 0 : return False
+
+		plugin_dir = os.path.join(self.dir_source, r"tentaculo/api/irevit")
+		for dir in self.apps["Revit"]:
+			try:
+				copy_tree(plugin_dir, dir)
+			except:
+				self.log.error("Unable to copy {0} to {1}".format(plugin_dir, dir))
+				cerebro_message("Manual copy required! {0} to {1}".format(plugin_dir, dir))
+
+	def install_tbharmony(self):
+		if len(self.apps["Toon Boom"]) == 0 : return False
+
+		plugin_dir = os.path.join(self.dir_source, r"tentaculo/api/itbharmony")
+		for dir in self.apps["Toon Boom"]:
+			try:
+				copy_tree(plugin_dir, dir)
+			except:
+				self.log.error("Unable to copy {0} to {1}".format(plugin_dir, dir))
+				cerebro_message("Manual copy required! {0} to {1}".format(plugin_dir, dir))
+
+	def install_katana(self):
+		global PLUGIN_EVAR
+		if len(self.apps["Katana"]) == 0 : return False
+
+		if HOST_OS == "windows":
+			dir = os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/ikatana"))
+			self.evar_set_win("KATANA_RESOURCES", [dir])
+
 	# ENVIRONMENT
 	def evar_set_win(self, evar, values, replace = False):
 		sep = os.path.pathsep
-		path_string = ""
+		path_string = None
+		res_paths = []
 
 		if not replace:
 			try:
-				import winreg
-			except:
-				raise Exception("Failed to access Windows registry")
-
-			try:
-				key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, (winreg.KEY_WOW64_64KEY + winreg.KEY_READ))
-				path_string = winreg.QueryValueEx(key, evar)[0]
-				key.Close()
+				with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, (winreg.KEY_WOW64_64KEY + winreg.KEY_READ)) as key:
+					path_string = winreg.QueryValueEx(key, evar)[0]
 			except:
 				pass
 
-		if path_string is None or len(path_string) == 0 or replace:
-			paths = [ os.path.normpath(v) for v in values ]
-			path_string = sep.join(paths)
+		if path_string is None:
+			res_paths = [ np(v) for v in values ]
 		else:
-			#paths = [ p[0] + p if p.startswith(("\\", "//")) and not p.startswith(("\\\\", "////")) else p for p in path_string.split(sep) if len(p) > 0 ]
-			paths = [ p for p in path_string.split(sep) if len(p) > 0 ]
+			res_paths = list(map(np, [ p for p in path_string.split(sep) if len(p) > 0 ]))
 			for val in values:
-				if not val in paths:
-					paths.append(os.path.normpath(val))
+				val_raw = np(val)
+				val_eval = np(val.replace("%{0}%".format(PLUGIN_EVAR), self.dir_install))
+				
+				if val_eval in res_paths:
+					res_paths[res_paths.index(val_eval)] = val_raw
+					
+				if not val_raw in res_paths:
+					res_paths.append(val_raw)
 
-			path_string = re.sub("[;]+", ';', sep.join(paths))
-
-		cmd = r'setx {0} "{1}"'.format(evar, path_string)
-		os.system(cmd)
+		path_string = re.sub("[;]+", ';', sep.join(res_paths))
+		
+		try:
+			with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, (winreg.KEY_WOW64_64KEY + winreg.KEY_WRITE)) as key:
+				winreg.SetValueEx(key, evar, 0, winreg.REG_EXPAND_SZ, path_string)
+		except:
+			cmd = r'setx {0} "{1}"'.format(evar, path_string)
+			os.system(cmd)
 
 	def evar_setup_mac(self):
 		plist = 'com.cerebro.tentaculo.plist'
@@ -751,7 +887,8 @@ class w_installer(QWidget):
 				located +=1
 				self.vLayout_hosts.addWidget(self.app_widget(name, p))
 
-		self.vLayout_hosts.addItem(QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Expanding))
+		self.scroll.setWidget(self.ScrollAreaWidgetContents)
+		self.scroll.setWidgetResizable(True)
 		self.status("{0} host applications found".format(located))
 
 	def app_widget(self, name, path):
@@ -765,7 +902,7 @@ class w_installer(QWidget):
 		#ui_check.clicked.connect(self.checkboxToggle)
 		ui_label = QLabel(ui_gb)
 		ui_label.setText(name)
-		ui_label.setFixedWidth(90)
+		ui_label.setFixedWidth(100)
 		ui_instpath = QLineEdit(ui_gb)
 		ui_instpath.setText(path)
 		ui_instpath.setReadOnly(True)
@@ -811,9 +948,18 @@ class w_installer(QWidget):
 		self.gb_hosts = QGroupBox(self.centralwidget)
 		self.gb_hosts.setTitle('Host applications found:')
 		self.gb_hosts.setSizePolicy(hosts_sizePolicy)
-		self.vLayout_hosts = QVBoxLayout(self.gb_hosts)
-		self.vLayout_hosts.setContentsMargins(10, 10, 10, 10)
-		self.vLayout_hosts.setSpacing(5)
+
+		self.vl = QVBoxLayout(self.gb_hosts)
+		self.vl.setContentsMargins(0, 0, 0, 0)
+		self.vl.setSpacing(0)
+		
+		self.scroll = QScrollArea(self.gb_hosts)
+		self.ScrollAreaWidgetContents = QWidget(self.scroll)
+		
+		self.ScrollAreaWidgetContents.setSizePolicy(QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding))
+		self.vLayout_hosts = QVBoxLayout(self.ScrollAreaWidgetContents)
+		
+		self.vl.addWidget(self.scroll)
 
 		# prev version gb
 		prev_sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
@@ -975,7 +1121,23 @@ class w_uninstaller(QWidget):
 			if os.path.exists(src_file):
 				os.remove(src_file)
 
+	def uninstall_autocad(self):
+		for dir in self.apps["Autocad"]:
+			plugin_dir = os.path.join(dir, r"Tentaculo.bundle")
+			if os.path.exists(plugin_dir):
+				shutil.rmtree(plugin_dir)
+
+	def uninstall_revit(self):
+		for dir in self.apps["Revit"]:
+			src_file = os.path.join(dir, r"irevit.dll")
+			if os.path.exists(src_file):
+				os.remove(src_file)
+			src_file = os.path.join(dir, r"Tentaculo.addin")
+			if os.path.exists(src_file):
+				os.remove(src_file)
+
 	def uninstall(self):
+		global INST_NETWORK
 		global PLUGIN_EVAR
 		if self.installed:
 			install_cfg = getConfigFile(FCONFIG)
@@ -991,9 +1153,12 @@ class w_uninstaller(QWidget):
 
 				self.uninstall_c4d()
 				self.uninstall_blender()
+				self.uninstall_autocad()
+				self.uninstall_revit()
 				self.log.info("Applications uninstalled.")
 
-				shutil.rmtree(self.path)
+				if not INST_NETWORK:
+					shutil.rmtree(self.path)
 				os.remove(install_cfg)
 				self.log.info("Plugin folder and config removed.")
 				cerebro_message("Cerebro Tentaculo uninstalled!")

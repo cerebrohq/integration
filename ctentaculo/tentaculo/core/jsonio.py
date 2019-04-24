@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
-import sys, os
-import json
-
-from tentaculo.core import capp
+import os, json
 
 def write(jfile, data):
 	if data is None or jfile is None: return False

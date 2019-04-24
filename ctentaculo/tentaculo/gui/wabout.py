@@ -2,7 +2,7 @@
 import sys, os, time
 
 from tentaculo import version
-from tentaculo.core import capp
+from tentaculo.core import capp, utils
 from tentaculo.gui import style
 
 from tentaculo.Qt.QtGui import *
@@ -16,7 +16,6 @@ class w_about(QDialog):
 	parent = None
 
 	def __init__(self, parent = None):
-		capp.clearUI(self.NAME)
 		super(self.__class__, self).__init__(parent = parent)
 		self.initUI()
 		self.initStyle()
@@ -41,9 +40,9 @@ class w_about(QDialog):
 
 		lb_logo = QLabel(self)
 		lb_logo.setEnabled(True)
-		lb_logo.setFixedSize(134, 177)
+		lb_logo.setFixedSize(150, 210)
 		lb_logo.setAlignment(Qt.AlignHCenter)
-		lb_logo.setPixmap(QPixmap(capp.getResDir("cerebro.png")))
+		lb_logo.setPixmap(QPixmap(utils.getResDir("cerebro.png")))
 
 		horizontalLayout.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
 		horizontalLayout.addWidget(lb_logo)
@@ -82,6 +81,9 @@ class w_about(QDialog):
 		verticalLayout.addItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
 	def run(self):
+		self.showMinimized()
+		self.showNormal()
+		self.activateWindow()
 		self.exec_()
 
 	def stop(self):

@@ -10,8 +10,8 @@ class TaskDefinition(QFrame):
 
 	def __init__(self, parent = None):
 		super(self.__class__, self).__init__(parent = parent)
-		self.initStyle()
 		self.initUI()
+		self.initStyle()
 
 	def initStyle(self):
 		styler = style.Styler()
@@ -28,25 +28,25 @@ class TaskDefinition(QFrame):
 
 		label = QLabel("TASK DEFINITION", self)
 
-		self.te_taskDescr = QTextBrowser(self)
-		self.te_taskDescr.setOpenExternalLinks(True)
-		self.te_taskDescr.document().setDocumentMargin(0)
+		self.tb_taskDescr = QTextBrowser(self)
+		self.tb_taskDescr.setOpenExternalLinks(True)
+		self.tb_taskDescr.document().setDocumentMargin(0)
 
 		verticalLayout.addWidget(label)
-		verticalLayout.addWidget(self.te_taskDescr)
+		verticalLayout.addWidget(self.tb_taskDescr)
 
 		self.setLayout(verticalLayout)
 
 	def clearTask(self):
-		self.te_taskDescr.clear()
+		self.tb_taskDescr.clear()
 
 	def setTask(self, task = None):
 		if task is None: return False
 
-		#self.te_taskDescr.setPlainText(QTextDocumentFragment.fromHtml(task["definition"]).toPlainText())
+		#self.tb_taskDescr.setPlainText(QTextDocumentFragment.fromHtml(task["definition"]).toPlainText())
 		text = task["definition"] + '<br/>'
 		for msg in task["messages"]:
 			text = text + '<b>' +  msg['author'] + ' ' + msg['date'] + '</b><br/>' + msg['msg'] + '<br/><br/>'
-		self.te_taskDescr.setHtml(text)
+		self.tb_taskDescr.setHtml(text)
 
 		return True

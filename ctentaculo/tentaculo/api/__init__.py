@@ -1,2 +1,2 @@
 # -*- coding: utf-8 -*-
-__all__ = ['icerebro', 'menu']
+__all__ = ['icerebro', 'menu', 'standalone']

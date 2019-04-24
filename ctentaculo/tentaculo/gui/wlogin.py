@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import sys, os, time
 
-from tentaculo.core import capp, clogger
+from tentaculo.core import capp, clogger, utils
 from tentaculo.gui import style
 
 from tentaculo.Qt.QtGui import *
@@ -20,10 +20,11 @@ class Wlogin(QDialog):
 
 	def __init__(self, parent = None):
 		QDialog.__init__(self, parent)
-		capp.clearUI(self.NAME)
 		self.log = clogger.CLogger().log
+		# Pre-styling for old apps
 		self.initStyle()
 		self.initUI()
+		self.initStyle()
 
 	def initStyle(self):
 		styler = style.Styler()
@@ -65,7 +66,9 @@ class Wlogin(QDialog):
 		else:
 			self.cb_username.setEditText(self.acc.get('login'))
 		"""		
-
+		self.showMinimized()
+		self.showNormal()
+		self.activateWindow()
 		res = self.exec_()
 
 		if res == QDialog.Accepted:			
@@ -74,10 +77,10 @@ class Wlogin(QDialog):
 		return None
 
 	def trylogin(self):
-		lgn = str(self.cb_username.currentText().lower().strip())
-		psw = str(self.le_password.text().strip())
-		srv = self.le_server.text().lower().strip()
-		port = self.le_port.text().lower().strip()
+		lgn = utils.string_unicode(self.cb_username.currentText()).lower().strip()
+		psw = utils.string_unicode(self.le_password.text()).strip()
+		srv = utils.string_unicode(self.le_server.text()).lower().strip()
+		port = utils.string_unicode(self.le_port.text()).lower().strip()
 
 		if lgn != '' and psw != '' and srv != '' and port != '':
 
@@ -179,9 +182,9 @@ class Wlogin(QDialog):
 
 		self.lb_logo = QLabel(self)
 		self.lb_logo.setEnabled(True)
-		self.lb_logo.setFixedSize(134, 177)
+		self.lb_logo.setFixedSize(150, 210)
 		self.lb_logo.setAlignment(Qt.AlignHCenter)
-		self.lb_logo.setPixmap(QPixmap(capp.getResDir("cerebro.png")))
+		self.lb_logo.setPixmap(QPixmap(utils.getResDir("cerebro.png")))
 
 		horizontalLayout_3.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
 		horizontalLayout_3.addWidget(self.lb_logo)
@@ -193,6 +196,7 @@ class Wlogin(QDialog):
 		self.cb_username.setObjectName("login")
 		self.cb_username.setEditable(True)
 		self.cb_username.lineEdit().setPlaceholderText("Login or E-mail")
+		self.cb_username.lineEdit().setStyleSheet("QLineEdit {background: transparent;}")
 		self.cb_username.setFocus()
 		self.cb_username.currentIndexChanged.connect(self.change_account)
 

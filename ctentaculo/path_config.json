@@ -4,7 +4,7 @@
 			"folder_path": "",
 			"task_activity": "",
 			"name": "$(task_name)",
-			"ver_padding": "3",
+			"ver_padding": 3,
 			"ver_prefix": "_v",
 			"publish": "$(task_parent_path)",
 			"version": "$(task_parent_path)/versions"
@@ -32,7 +32,24 @@
 	},
 	"trans_mode":
 	{
-		"cinema4d": "True",
-		"houdini": "True"
+		"cinema4d": true,
+		"houdini": true
+	},
+	"processors":
+	{
+		"tbharmony": {
+			"open_pre": {
+				"script_path": "hooks/tbharmony_hooks.py",
+				"function": "open_pre"
+			},
+			"version_pre": {
+				"script_path": "hooks/tbharmony_hooks.py",
+				"function": "version_pre"
+			},
+			"publish_pre": {
+				"script_path": "hooks/tbharmony_hooks.py",
+				"function": "publish_pre"
+			}
+		}
 	}
 }

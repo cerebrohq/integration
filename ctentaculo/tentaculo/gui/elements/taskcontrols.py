@@ -19,8 +19,8 @@ class TaskControls(QFrame):
 		self.log = clogger.CLogger().log
 		self.conn = db.Db()
 		self.config = config.Config()
-		self.initStyle()
 		self.initUI(task_select)
+		self.initStyle()
 		self.clearTask()
 
 	def initStyle(self):

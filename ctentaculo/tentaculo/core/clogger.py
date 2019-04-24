@@ -5,7 +5,7 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 
 from tentaculo import Qt, version
-from tentaculo.core import capp
+from tentaculo.core import capp, utils
 
 # logger
 # WARNING: This is SINGLETON
@@ -26,7 +26,7 @@ class CLogger(object):
 
 	def init_logger(self):
 		if self.log == None:
-			log_path = capp.tempdir()
+			log_path = utils.tempdir()
 
 			if not os.path.exists(log_path):
 				os.makedirs(log_path)

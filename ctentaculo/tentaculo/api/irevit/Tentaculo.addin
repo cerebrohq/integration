@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+       <Name>Tentaculo</Name>
+	   <Assembly>irevit.dll</Assembly>
+       <FullClassName>irevit.Tentaculo</FullClassName>
+       <AddInId>ca8eacce-81df-46d1-8523-d34ea6a58fd2</AddInId>
+    <VendorId>CEREBRO</VendorId>
+    <VendorDescription>Cerebro, Inc, www.cerebrohq.com</VendorDescription>
+  </AddIn>
+</RevitAddIns>

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-import sys, os, ctypes
-from tentaculo.core import capp
+import sys, os, ctypes, time
+from tentaculo.api import standalone
+from tentaculo.core import capp, utils
 
 if capp.HOST == capp.MAYA:
 	import maya.cmds as mc
@@ -79,7 +80,7 @@ class Shot():
 			if viewer_input is not None and viewer_node is not None:
 				inputNode = nuke.Node.input(viewer_node, viewer_input)
 
-				out_path = os.path.join(capp.tempdir(), "cerebro_screen.png").replace('\\', '/')
+				out_path = os.path.join(utils.tempdir(), "cerebro_screen.png").replace('\\', '/')
 
 				node_write = nuke.nodes.Write(file = out_path, name = "cerebro_screen_node" , file_type = "png")
 				node_write.setInput(0, inputNode)
@@ -100,7 +101,7 @@ class Shot():
 			persp = cur_desktop.paneTabOfType(hou.paneTabType.SceneViewer).curViewport().name()
 			camera_path = desktop + '.' + panetab + ".world." + persp
 
-			out_path = os.path.join(capp.tempdir(), "cerebro_screen.jpg").replace('\\', '/')
+			out_path = os.path.join(utils.tempdir(), "cerebro_screen.jpg").replace('\\', '/')
 			hou.hscript("viewwrite -r 800 600 -f {0} {1} {2} '{3}'".format(frame, frame, camera_path, out_path))
 
 			self.set(out_path)
@@ -117,7 +118,7 @@ class Shot():
 			res = view.GetDIB(info,bm)
 			if res:
 				#bm.Display()
-				out_path = os.path.join(capp.tempdir(), "cerebro_screen.jpg")
+				out_path = os.path.join(utils.tempdir(), "cerebro_screen.jpg")
 
 				info.SetName(out_path)
 				bm.OpenOutput(info)
@@ -138,13 +139,13 @@ class Shot():
 			if bmp.Init(xres, yres) == c4d.IMAGERESULT_OK:
 				res = c4d.documents.RenderDocument(doc, rd.GetData(), bmp, c4d.RENDERFLAGS_EXTERNAL)
 				if res == c4d.RENDERRESULT_OK:
-					out_path = os.path.join(capp.tempdir(), "cerebro_screen.png")
+					out_path = os.path.join(utils.tempdir(), "cerebro_screen.png")
 					res = bmp.Save(out_path, c4d.FILTER_PNG)
 					if res == c4d.IMAGERESULT_OK:
 						self.set(out_path)
 
 		elif capp.HOST == capp.BLENDER:
-			out_path = os.path.join(capp.tempdir(), "cerebro_screen.png")
+			out_path = os.path.join(utils.tempdir(), "cerebro_screen.png")
 
 			for window in bpy.context.window_manager.windows:
 				screen = window.screen
@@ -171,7 +172,38 @@ class Shot():
 
 			self.set(out_path)
 
+		elif capp.HOST == capp.STANDALONE:
+			out_path = os.path.join(utils.tempdir(), "standalone_screen.png")
+			if standalone.message_function("screenshot", [out_path])[0]:
+				self.set(out_path)
+
+		elif capp.HOST == capp.KATANA:
+			out_path = os.path.join(utils.tempdir(), "cerebro_screen.png")
+			wnd = capp.app_window()
+			pix = QPixmap.grabWindow(wnd.winId())
+			pix.save(out_path)
+			self.set(out_path)
+
 		return self.img
+
+	def activeScreen(self):
+		out_path = os.path.join(utils.tempdir(), "screenshot-{0}.png".format(time.strftime("%Y-%m-%d--%H-%M-%S")))
+
+		if capp.QT5:
+			screen = QApplication.primaryScreen()
+			window = self.parent.windowHandle()
+			if window is not None:
+				screen = window.screen()
+			if screen is not None:
+				sr = screen.availableGeometry()
+				pix = screen.grabWindow(QApplication.desktop().winId(), sr.x(), sr.y(), sr.width(), sr.height())
+				pix.save(out_path)
+		else:
+			sr = QApplication.desktop().availableGeometry(self.parent)
+			pix = QPixmap.grabWindow(QApplication.desktop().winId(), sr.x(), sr.y(), sr.width(), sr.height())
+			pix.save(out_path)
+
+		return out_path
 
 	def clear(self):
 		self.img = None
@@ -204,7 +236,7 @@ class Shot():
 	def save(self, img = None):
 		result = None
 		if img is None: return result
-		tmp = capp.tempdir()
+		tmp = utils.tempdir()
 		result = os.path.join(tmp, 'cerebro_screen.png')
 		r = img.save(result)
 		if r is not True: return None

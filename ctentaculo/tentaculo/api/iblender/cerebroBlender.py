@@ -129,12 +129,25 @@ if capp.HOST == capp.BLENDER:
 			if capp.DEBUG is True:
 				layout.operator("object.cerebro_reload")
 
-	bpy.utils.register_class(CerebroTodo)
-	bpy.utils.register_class(CerebroLink)
-	bpy.utils.register_class(CerebroReport)
-	bpy.utils.register_class(CerebroPublish)
-	bpy.utils.register_class(CerebroLogout)
-	bpy.utils.register_class(CerebroChdir)
-	bpy.utils.register_class(CerebroAbout)
-	bpy.utils.register_class(CerebroReload)
-	bpy.utils.register_class(CerebroPanel)
+	def register():
+		bpy.utils.register_class(CerebroTodo)
+		bpy.utils.register_class(CerebroLink)
+		bpy.utils.register_class(CerebroReport)
+		bpy.utils.register_class(CerebroPublish)
+		bpy.utils.register_class(CerebroLogout)
+		bpy.utils.register_class(CerebroChdir)
+		bpy.utils.register_class(CerebroAbout)
+		bpy.utils.register_class(CerebroReload)
+		bpy.utils.register_class(CerebroPanel)
+
+	def unregister():
+		bpy.utils.unregister_class(CerebroTodo)
+		bpy.utils.unregister_class(CerebroLink)
+		bpy.utils.unregister_class(CerebroReport)
+		bpy.utils.unregister_class(CerebroPublish)
+		bpy.utils.unregister_class(CerebroLogout)
+		bpy.utils.unregister_class(CerebroChdir)
+		bpy.utils.unregister_class(CerebroAbout)
+		bpy.utils.unregister_class(CerebroReload)
+		bpy.utils.unregister_class(CerebroPanel)
+

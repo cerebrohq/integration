@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import os, time, datetime
 
-from tentaculo.core import capp, shot, vfile, config, clogger, fmanager
+from tentaculo.core import capp, shot, vfile, config, clogger, fmanager, utils
 from tentaculo.api.icerebro import db
 from tentaculo.gui import style, wapp
 
@@ -21,18 +21,19 @@ class w_createReport(QWidget):
 	task = None
 	task_id = None
 	to_publish = False
-	thumbs = []
+	hashtags = []
 	attachments = {}
 
 	def __init__(self, taskid = None, to_publish = False, parent = None):
-		capp.clearUI(self.NAME)
 		super(self.__class__, self).__init__(parent = parent)
 		self.setWindowFlags(Qt.Window)
 		self.log = clogger.CLogger().log
 		self.conn = db.Db()
 		self.fman = fmanager.FManager()
+		# Pre-styling for old apps
 		self.initStyle()
 		self.initUI()
+		self.initStyle()
 		self.initData(taskid, to_publish)
 
 	def event(self, event):
@@ -61,6 +62,7 @@ class w_createReport(QWidget):
 			self.lb_header.setText("Report")
 			self.pb_publish.setText("Report")
 
+		self.cb_version.setVisible(self.to_publish)
 		self.te_report.document().setPlainText("")
 		if not self.conn.connected:
 			self.conn.login()
@@ -86,46 +88,51 @@ class w_createReport(QWidget):
 		self.screenTake()
 		self.log.info("Report task selected: %s", self.task_id)
 
-	def taskSet(self, task_id):		
-
+	def taskSet(self, task_id):
 		self.task = self.conn.task(task_id)
 		self.pb_publish.setEnabled(False)
 		
 		if self.task is not None:
-			self.fvers.setConfig(self.config.translate(self.task))
+			task_paths = self.config.translate(self.task)
+			self.fvers.setConfig(task_paths)
 			self.task_id = task_id
 			if self.config.task_valid(self.task)[0]:
 				self.pb_publish.setEnabled(self.fvers.publish_path() is not None or self.fvers.next_version_path() is not None)
 				self.lb_taskName.setText(self.task["name"])
 				self.lb_taskPath.setText(self.task["path_repr"])
 
-				thumb = QImage(self.task["thumbnail"]).scaled(73, 40, Qt.KeepAspectRatioByExpanding)
+				thumb = QImage(self.task["thumbnail"]).scaled(73, 40, Qt.KeepAspectRatioByExpanding) if self.task["thumbnail"] is not None else QImage()
 
 				if thumb.isNull():
-					thumb = QImage(capp.getResDir("image.png"))
-
+					thumb = QImage(utils.getResDir("image.png"))
+				
 				self.lb_taskThumb.setPixmap(QPixmap.fromImage(thumb))
-			
+				
+				self.cb_taskFile.blockSignals(True)
 				self.cb_taskFile.clear()
 				self.cb_taskFile.lineEdit().setReadOnly(not self.task["name_editable"])
-				if not self.fvers.is_empty:
-					ver = self.fvers.next_version if self.fvers.next_version_path() is not None else self.fvers.publish
-					self.le_taskFile.setText(ver[len(self.fvers.base_name):])
-					self.cb_taskFile.addItems(self.task["name_list"])
-					if self.cb_taskFile.findText(self.fvers.base_name) == -1 and len(self.fvers.base_name) > 0:
-						self.cb_taskFile.addItem(self.fvers.base_name)
-					if capp.QT5:			
-						self.cb_taskFile.setCurrentText(self.fvers.base_name)
-					else:
-						self.cb_taskFile.setEditText(self.fvers.base_name)
-					
-				else:
-					self.le_taskFile.clear()
-
+				self.cb_taskFile.addItems(task_paths["name_list"])
+				self.cb_taskFile.blockSignals(False)
+				self.update_version()
 				self.updateStatusList()
 
+	def update_version(self, save_current = False):
+		self.cb_taskFile.setEnabled(not save_current)
+		
+		if not self.fvers.is_empty:
+			ver = (self.fvers.current_version if save_current else self.fvers.next_version) if self.fvers.next_version_path() is not None else self.fvers.publish
+			self.le_taskFile.setText(ver[len(self.fvers.base_name):])
+			if self.cb_taskFile.findText(self.fvers.base_name) == -1 and len(self.fvers.base_name) > 0:
+				self.cb_taskFile.addItem(self.fvers.base_name)
+			if capp.QT5:
+				self.cb_taskFile.setCurrentText(self.fvers.base_name)
+			else:
+				self.cb_taskFile.setEditText(self.fvers.base_name)
+		else:
+			self.le_taskFile.clear()
+
 	def update_savename(self):
-		self.config.set_task_filename(self.task_id, self.cb_taskFile.currentText())
+		self.config.set_task_filename(self.task_id, utils.string_unicode(self.cb_taskFile.currentText()))
 		self.fvers.setConfig(self.config.translate(self.task))
 		self.pb_publish.setEnabled(self.fvers.publish_path() is not None or self.fvers.next_version_path() is not None)
 		ver = self.fvers.next_version if self.fvers.next_version_path() is not None else self.fvers.publish
@@ -141,8 +148,11 @@ class w_createReport(QWidget):
 		if task is not None:
 			ind = -1
 			for i, st in enumerate(self.statuses):
-				if task["status"] == st[0]:
+				if self.to_publish and task["publish_status"] is not None and task["publish_status"] == st[0]:
 					ind = i
+				elif task["status_id"] == st[1]:
+					ind = i
+
 				self.cb_status.addItem(st[0])
 			self.cb_status.setCurrentIndex(ind)
 
@@ -153,7 +163,7 @@ class w_createReport(QWidget):
 		taskwnd.run()
 
 	def add_files(self, as_link):
-		files = wapp.file("Select files to add")
+		files = wapp.file("Select files to add", self.fvers.default_dir())
 		if files is not None:
 			for file in files:
 				self.attachments[file] = as_link
@@ -214,7 +224,7 @@ class w_createReport(QWidget):
 		if self.cb_status.currentIndex() >= 0:
 			status = self.statuses[self.cb_status.currentIndex()][1]
 		# Text
-		text = self.te_report.toPlainText()
+		text = utils.string_unicode(self.te_report.toPlainText())
 		# Time
 		h, m = self.cb_time.currentText().split("h ")
 		h = int(h) if len(h) > 0 else 0
@@ -225,7 +235,10 @@ class w_createReport(QWidget):
 			processdata = {"local_file_path": u"", "version_file_path": u"", "publish_file_path": u"", "report": {}, "attachments": {}, "links": {}}
 			processdata["report"]["plain_text"] = text
 			processdata["report"]["work_time"] = work_time
+
 			for fpath, as_link in self.attachments.items():
+				fpath = os.path.normpath(fpath)
+
 				if as_link:
 					processdata["links"][fpath] = []
 				else:
@@ -233,26 +246,38 @@ class w_createReport(QWidget):
 
 			version_file = None
 			if self.to_publish and self.fvers.publish_path() is not None:
-				version_file = self.fman.publish(self.task, processdata, status, self.ver_thumb)
+				version_file = self.fman.publish(self.task, processdata, status, self.ver_thumb, self.hashtags, self.cb_version.isChecked())
 			else:
-				version_file = self.fman.version(self.task, processdata, status, self.ver_thumb)
+				version_file = self.fman.version(self.task, processdata, status, self.ver_thumb, self.hashtags)
 
 			if version_file:
 				self.log.info('%s has been successfully.', opname)
 				res = True
 
 			self.conn.refresh_task(self.task_id)
-			self.stop()
+			if res: self.stop()
 		except Exception as err:
-			wapp.error(capp.string_unicode(str(err)))
+			wapp.error(utils.error_unicode(err))
 		return res
+
+	def addScreenshot(self):
+		self.hide()
+		time.sleep(0.2)
+		imgpath = self.shot.activeScreen()
+		self.show()
+		if (os.path.exists(imgpath)):
+			self.attachments[imgpath] = False
+			self.update_files()
 
 	def screenTake(self):
 		self.screenClear()
-		self.shot.take()
-		if self.shot.img is not None:
-			self.lb_screen.setPixmap(self.shot.img.scaled(400, 200, Qt.KeepAspectRatioByExpanding))
-			self.ver_thumb = self.shot.fname
+		try:
+			self.shot.take()
+			if self.shot.img is not None:
+				self.lb_screen.setPixmap(self.shot.img.scaled(400, 200, Qt.KeepAspectRatioByExpanding))
+				self.ver_thumb = self.shot.fname
+		except Exception as err:
+			wapp.error(u"Unable to take screenshot: {0}".format(utils.error_unicode(err)))
 
 	def screenClear(self):
 		self.ver_thumb = None
@@ -373,6 +398,7 @@ class w_createReport(QWidget):
 		self.cb_taskFile.currentIndexChanged.connect(self.update_savename)
 		self.cb_taskFile.lineEdit().editingFinished.connect(self.update_savename)
 		self.cb_taskFile.lineEdit().setReadOnly(True)
+		self.cb_taskFile.lineEdit().setStyleSheet("QLineEdit {background: transparent;}")
 
 		self.le_taskFile = QLineEdit(frame_3)
 		self.le_taskFile.setObjectName("filename")
@@ -407,6 +433,13 @@ class w_createReport(QWidget):
 		pushButton_4.setFixedHeight(20)
 		pushButton_4.setFixedWidth(80)
 		pushButton_4.clicked.connect(self.screenTake)
+
+		pushButton_5 = QPushButton("Screenshot", frame_6)
+		pushButton_5.move(300, 50)
+		pushButton_5.setObjectName("smallDark")
+		pushButton_5.setFixedHeight(20)
+		pushButton_5.setFixedWidth(80)
+		pushButton_5.clicked.connect(self.addScreenshot)
 
 		verticalLayout_7.addWidget(frame_3)
 		verticalLayout_7.addWidget(frame_6)
@@ -538,7 +571,12 @@ class w_createReport(QWidget):
 		self.pb_cancel.clicked.connect(self.stop)
 		self.pb_cancel.setObjectName("dark")
 
+		self.cb_version = QCheckBox("Save to current version", frame_5)
+		self.cb_version.setChecked(False)
+		self.cb_version.toggled.connect(self.update_version)
+
 		horizontalLayout_5.addItem(horizontalSpacer_4)
+		horizontalLayout_5.addWidget(self.cb_version)
 		horizontalLayout_5.addWidget(self.pb_publish)
 		horizontalLayout_5.addWidget(self.pb_cancel)
 
@@ -550,6 +588,7 @@ class w_createReport(QWidget):
 		self.setLayout(verticalLayout_8)
 
 	def run(self):
+		self.activateWindow()
 		self.show()
 
 	def stop(self):
