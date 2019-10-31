@@ -57,15 +57,13 @@ class Wlogin(QDialog):
 		self.cb_username.blockSignals(False)
 
 		self.le_password.setText(str(self.acc.get('psw')))
-		server, port = self.acc.get('address', ':').split(':')
-		self.le_server.setText(server)
-		self.le_port.setText(port)
-		"""
-		if capp.QT5:			
+		self.le_url.setText(self.acc.get("url", ""))
+		
+		if capp.QT5:
 			self.cb_username.setCurrentText(self.acc.get('login'))
 		else:
 			self.cb_username.setEditText(self.acc.get('login'))
-		"""		
+		
 		self.showMinimized()
 		self.showNormal()
 		self.activateWindow()
@@ -79,23 +77,21 @@ class Wlogin(QDialog):
 	def trylogin(self):
 		lgn = utils.string_unicode(self.cb_username.currentText()).lower().strip()
 		psw = utils.string_unicode(self.le_password.text()).strip()
-		srv = utils.string_unicode(self.le_server.text()).lower().strip()
-		port = utils.string_unicode(self.le_port.text()).lower().strip()
+		url = utils.string_unicode(self.le_url.text()).lower().strip()
 
-		if lgn != '' and psw != '' and srv != '' and port != '':
+		if lgn != '' and psw != '':
 
-			adr = ':'.join([srv, port])
 			if self.acc.get('login', '') != lgn:
 				acc = {}
 				acc.setdefault('login', lgn)
 				acc.setdefault('psw', psw)
 				acc.setdefault('savepath', '')
-				acc.setdefault('address', adr)
+				acc.setdefault('url', url)
 				self.acc = acc
 		
 			self.acc.update({'login': lgn})
 			self.acc.update({'psw': psw})
-			self.acc.update({'address': adr})
+			self.acc.update({'url': url})
 
 			if self.login_as(self.acc):
 				self.accept()
@@ -112,9 +108,7 @@ class Wlogin(QDialog):
 			if id == account.get('id'):
 				self.acc = account
 				self.le_password.setText(str(self.acc.get('psw')))
-				server, port = self.acc.get('address', ':').split(':')
-				self.le_server.setText(server)
-				self.le_port.setText(port)
+				self.le_url.setText(self.acc.get("url", ""))
 				break
 
 	def toggle_settings(self):
@@ -149,7 +143,7 @@ class Wlogin(QDialog):
 		self.tb_settings = QToolButton(frame)
 		self.tb_settings.setObjectName("loginSettings")
 		self.tb_settings.setIconSize(QSize(24,24))
-		self.tb_settings.setToolTip("Connection address")
+		self.tb_settings.setToolTip("Connection direct URL")
 		self.tb_settings.clicked.connect(self.toggle_settings)
 
 		self.fr_settings = QFrame(frame)
@@ -161,17 +155,11 @@ class Wlogin(QDialog):
 		horizontalLayout.setSpacing(5)
 		horizontalLayout.setContentsMargins(5, 0, 0, 0)
 
-		self.le_server = QLineEdit(self.fr_settings)
-		self.le_server.setObjectName("loginSettings")
-		self.le_server.setPlaceholderText("Server")
+		self.le_url = QLineEdit(self.fr_settings)
+		self.le_url.setObjectName("loginSettings")
+		self.le_url.setPlaceholderText("Direct URL")
 
-		self.le_port = QLineEdit(self.fr_settings)
-		self.le_port.setObjectName("loginSettings")
-		self.le_port.setPlaceholderText("Port")
-		self.le_port.setMaximumWidth(50)
-
-		horizontalLayout.addWidget(self.le_server)
-		horizontalLayout.addWidget(self.le_port)
+		horizontalLayout.addWidget(self.le_url)
 
 		horizontalLayout_2.addWidget(self.tb_settings)
 		horizontalLayout_2.addWidget(self.fr_settings)

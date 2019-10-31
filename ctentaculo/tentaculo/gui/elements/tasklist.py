@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import locale, webbrowser
-from tentaculo.gui import style
+from tentaculo.gui import style, wapp
 
-from tentaculo.core import capp, clogger, config, utils, utils
+from tentaculo.core import capp, clogger, config, utils, utils, fmanager
 from tentaculo.api.icerebro import db
 
 from tentaculo.Qt.QtGui import *
@@ -14,6 +14,7 @@ COLUMN_COUNT = 6
 
 
 class TaskList(QFrame):
+	refresh = Signal()
 	clicked = Signal()
 	doubleClicked = Signal()
 
@@ -25,6 +26,7 @@ class TaskList(QFrame):
 		super(self.__class__, self).__init__(parent = parent)
 		self.log = clogger.CLogger().log
 		self.conn = db.Db()
+		self.fman = fmanager.FManager()
 		self.config = config.Config()
 		self.__tree_display = treeDisplay
 		self.initUI()
@@ -169,39 +171,29 @@ class TaskList(QFrame):
 		index = self.tableWidget.indexAt(pos)
 		if not index.isValid(): return
 
-		menu = QMenu()
-		styler = style.Styler()
-		styler.initStyle(menu)
+		taskPath = None
+		taskCerebro = None
+		if self.task_id is not None:
+			task = self.conn.task(self.task_id)
+			if task is not None:
+				task_paths = self.config.translate(task)
+				taskCerebro = task["path"] + task["name"]
+				taskPath = task_paths["publish"] if len(task_paths.get("publish", "")) > 0 else task_paths.get("version", None)
 
-		acts = []
-		menu_options = ["Open in Cerebro", None, "Copy Local Path to Clipboard", "Show in Explorer"]
-		for opt in menu_options:
-			if opt is None:
-				menu.addSeparator()
-			else:
-				action = menu.addAction(opt)
-				acts.append(action)
-		try:
-			taskPath = None
-			taskCerebro = None
-			if self.task_id is not None:
-				task = self.conn.task(self.task_id)
-				if task is not None:
-					taskCerebro = task["path"] + task["name"]
-					taskPath = self.config.translate(task).get("publish", None)
-
-			ind = acts.index(menu.exec_(self.tableWidget.viewport().mapToGlobal(pos)))
-			if ind == 0:
-				if taskCerebro is not None:
-					webbrowser.open(utils.string_unicode(r"cerebro://{0}?tid={1}").format(taskCerebro, self.task_id))
-			elif ind == 1:
-				if taskPath is not None:
-					capp.copyToClipboard(taskPath)
-			elif ind == 2:
-				if taskPath is not None:
-					utils.show_dir(taskPath)
-		except ValueError:
-			pass
+				menu_options = ["Open in Cerebro...", None, "Copy local path to Clipboard", "Show in Explorer..."]
+				res = wapp.menu(task, self.tableWidget.viewport().mapToGlobal(pos), menu_options, "menu_task")
+				if res is not None:
+					if res in menu_options and len(taskPath) and len(taskCerebro):
+						if res == menu_options[0]:
+							webbrowser.open(utils.string_unicode(r"cerebro://{0}?tid={1}").format(taskCerebro, self.task_id))
+						elif res == menu_options[2]:
+							capp.copyToClipboard(taskPath)
+						elif res == menu_options[3]:
+							if not utils.show_dir(taskPath):
+								wapp.error("Directory does not exist: {}".format(taskPath))
+					else:
+						# Hook used - update task data
+						self.refresh.emit()
 
 	def __cellChanged(self, newRow, newCol, lastRow = 0, lastCol = 0):
 		item = self.tableWidget.item(newRow, 0)
@@ -251,14 +243,19 @@ class TaskList(QFrame):
 			
 			if show_folder:
 				folderIcon = QLabel(thumbFrame)
-				icon = QImage(utils.getResDir("folder-overlay.png"))
-				folderIcon.setPixmap(QPixmap.fromImage(icon))
+				# Css property now
+				#icon = QImage(utils.getResDir("folder-overlay.png"))
+				#folderIcon.setPixmap(QPixmap.fromImage(icon))
 				folderIcon.setFixedSize(146, 80)
 				folderIcon.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+				folderIcon.setObjectName("folder-hover-hide")
+
+			if task["indicator"] is not None:
+				task_indicator = IndicatorWidget(task["indicator"], thumbFrame)
 	
 			verticalLayout = QVBoxLayout()
 			verticalLayout.setContentsMargins(0, 0, 0, 0)
-			verticalLayout.setSpacing(0)			
+			verticalLayout.setSpacing(0)
 
 			if fullInfo:
 				pathname = task["path"].split('/')[-2]
@@ -304,7 +301,11 @@ class TaskList(QFrame):
 			taskStatus = QLabel(wgt)
 			taskStatus.setFixedSize(26, 26)
 			icon = QPixmap()
-			icon.loadFromData(task["status_icon"], "XPM")
+			if task["status_icon"] is not None and len(task["status_icon"]):
+				icon = QIcon(task["status_icon"]).pixmap(QSize(20, 20))
+			elif task["status_xpm"] is not None and len(task["status_xpm"]):
+				icon.loadFromData(task["status_xpm"], "XPM")
+				icon = icon.scaled(QSize(20, 20), Qt.KeepAspectRatio, Qt.SmoothTransformation)
 			taskStatus.setPixmap(icon)
 			taskStatus.setToolTip(task["status"])
 
@@ -344,3 +345,18 @@ class TaskItem(QTableWidgetItem):
 
 	def text(self):
 		return ""
+
+class IndicatorWidget(QWidget):
+	def __init__(self, color, parent):
+		super(IndicatorWidget, self).__init__(parent)
+		self.setFixedSize(20, 20)
+		self.color = color
+
+	def paintEvent(self, event):
+		qp = QPainter(self)
+		qp.setRenderHint(QPainter.Antialiasing, True)
+		qp.setBrush(QBrush(QColor(self.color)))
+		qp.setPen(Qt.NoPen)
+		qp.drawEllipse(6, 6, 12, 12)
+
+		super(IndicatorWidget, self).paintEvent(event)

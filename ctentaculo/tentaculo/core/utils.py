@@ -5,6 +5,8 @@ import sys, subprocess, locale, os, platform, tempfile
 HOST_OS = platform.system().lower()
 # Python version
 PY3 = sys.version_info[0] == 3
+# Check if python 3.7 (blender new releases)
+PY37 = sys.version_info[:2] > (3, 5)
 
 def plugin_dir():
 	pdir = os.environ.get("CTENTACULO_LOCATION")
@@ -15,7 +17,7 @@ def plugin_dir():
 
 def include_libs3():
 	# Libs3 paths
-	libs3 = [ os.path.join(plugin_dir(), "libs3", HOST_OS, "python3" if PY3 else "python2"), os.path.join(plugin_dir(), "libs3", "crossplatform") ]
+	libs3 = [ os.path.join(plugin_dir(), "libs3", HOST_OS, ("python37" if PY37 else "python3") if PY3 else "python2"), os.path.join(plugin_dir(), "libs3", "crossplatform") ]
 
 	for lib in libs3:
 		if os.path.exists(lib) and not lib in sys.path:
@@ -77,6 +79,10 @@ def string_byte(string):
 			string = string.encode('utf-8')
 	return string
 
+def np(path):
+	if path is None or not len(path): return path
+	return os.path.normpath(os.path.normcase(path))
+
 def getResDir(fname = None):
 	if fname is None: fname = ""
 	cdir = os.path.dirname(os.path.realpath(__file__))
@@ -133,3 +139,9 @@ def configdir():
 def tempdir():
     temp = tempfile.gettempdir()
     return os.path.normpath(os.path.join(temp, 'tempCerebro'))
+
+def parseInt(strval, default = 0):
+	try:
+		return int(strval)
+	except:
+		return default

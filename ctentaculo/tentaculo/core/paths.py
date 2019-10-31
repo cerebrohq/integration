@@ -7,12 +7,12 @@ host_linux = 'linux'
 host_macos = 'darwin'
 host_current = platform.system().lower()
 
-class Paths():
+class Paths(object):
 
-	redirect_paths = []
+	__slots__ = ('redirect_paths')
 
 	def __init__(self):
-		pass
+		self.redirect_paths = []
 
 	def add_paths(self, paths):
 

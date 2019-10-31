@@ -9,6 +9,9 @@ from tentaculo.gui import wapp
 # file manager: open - save - publish
 # WARNING: This is SINGLETON
 class FManager(object):
+
+	__slots__ = ('log', 'config', 'db', 'module_cache')
+
 	# singleton	
 	__instance = None
 
@@ -25,13 +28,14 @@ class FManager(object):
 		self.log = clogger.CLogger().log
 		self.config = config.Config()
 		self.db = db.Db()
+		self.module_cache = {}
 		
 	def execute(self, func, args):
 		res = None
 		try:
 			res = func(*args)
 		except Exception as err:
-			self.log.debug('EXCEPTION', exc_info=1)
+			self.log.error('EXCEPTION', exc_info=1)
 			wapp.error(utils.error_unicode(err))
 
 		return res
@@ -65,6 +69,9 @@ class FManager(object):
 
 	def embed(self, task_id, file_path):
 		return self.execute(self.z_embed, (task_id, file_path))
+
+	def gui_processor(self, task, function_name, function_arg, function_override = None):
+		return self.execute(self.z_processor, (task, function_name, function_arg, "gui", function_override))
 
 	def z_open_task_folder(self):
 		task_id = self.config.task_for_file(capp.file_name(self.log))
@@ -105,13 +112,15 @@ class FManager(object):
 
 		return taskdata
 
-	def z_processor(self, task, function_name, function_arg):
+	def z_processor(self, task, function_name, function_arg, proc_name = None, function_override = None):
 		ret_value = function_arg
 		call_made = False
-		callinfo = self.config.processorinfo(task["unid"], function_name)
+		callinfo = self.config.processor_info(task["unid"], function_name, proc_name, function_override)
 		if callinfo[0] is not None and callinfo[1] is not None:
 			if os.path.exists(callinfo[0]):
-				module = imp.load_source('', callinfo[0])
+				if callinfo[0] not in self.module_cache:
+					self.module_cache[callinfo[0]] = imp.load_source('', callinfo[0])
+				module = self.module_cache[callinfo[0]]
 				if hasattr(module, callinfo[1]):
 					ret_value = getattr(module, callinfo[1])(self.z_format_taskdata(task), function_arg)
 					call_made = True
@@ -179,6 +188,7 @@ class FManager(object):
 				else:
 					self.log.info('File creation has been aborted.')
 			except Exception as err:
+				self.log.error('EXCEPTION', exc_info=1)
 				wapp.error(utils.error_unicode(err))
 		else:
 			self.log.warning('Valid file name is required!')
@@ -214,21 +224,21 @@ class FManager(object):
 
 			ret = self.z_processor(task, "open_pre", processdata)
 			if ret[0] is None: return False
-			processdata["local_file_path"] = ret[0]["local_file_path"]
+			for k in processdata: processdata[k] = ret[0][k]
 			ret = self.z_processor(task, "open_replace", processdata)
 
 			if ret[0] is not None and not ret[1]:
-				processdata["local_file_path"] = ret[0]["local_file_path"]
-				if filepath != processdata["local_file_path"]:
+				for k in processdata: processdata[k] = ret[0][k]
+				if utils.np(processdata["original_file_path"]) != utils.np(processdata["local_file_path"]):
 					self.log.info('Copy file to working directory: %s', processdata["local_file_path"])	
 					if not os.path.exists(os.path.dirname(processdata["local_file_path"])):
 						os.makedirs(os.path.dirname(processdata["local_file_path"]))
 
-					shutil.copy(filepath, processdata["local_file_path"])
+					shutil.copy(processdata["original_file_path"], processdata["local_file_path"])
 
 				if capp.save_query(self.log):
-					processdata["local_file_path"] = capp.open_file(self.log, processdata["local_file_path"], filepath)
-					self.config.save_task_file(task, processdata["local_file_path"], fvers.file_version(filepath))
+					processdata["local_file_path"] = capp.open_file(self.log, processdata["local_file_path"], processdata["original_file_path"])
+					self.config.save_task_file(task, processdata["local_file_path"], fvers.file_version(processdata["original_file_path"]))
 					res = True
 
 			self.z_processor(task, "open_post", processdata)
@@ -238,6 +248,7 @@ class FManager(object):
 			else:
 				self.log.info('Load file has been aborted.')
 		except Exception as err:
+			self.log.error('EXCEPTION', exc_info=1)
 			wapp.error(utils.error_unicode(err))
 
 		return res
@@ -275,6 +286,11 @@ class FManager(object):
 			self.db.refresh_task(task_id)
 
 		self.log.info('Save silent version successful')
+
+		#if res == False:
+		#	from tentaculo.api import menu
+		#	menu.todolist()
+
 		return new_filepath
 	
 	def z_verison(self, task, processdata, status, ver_thumb, hashtags):
@@ -307,7 +323,9 @@ class FManager(object):
 			for k in processdata:
 				processdata[k] = ret[0][k]
 
-			new_filepath = self.z_save_version(task, fvers, processdata["local_file_path"], processdata["version_file_path"], changed_status)
+			#res = wapp.question('Do you want to continue after saving the version?', 'Version saving...')	
+
+			new_filepath = self.z_save_version(task, fvers, processdata["local_file_path"], processdata["version_file_path"], changed_status) #(changed_status and res == False))
 
 			self.log.info('Save %s version file has been successfull.', new_filepath)
 			self.log.debug('New status: %s. Time: %s', status, processdata["report"]["work_time"])
@@ -325,6 +343,10 @@ class FManager(object):
 				self.db.db.message_set_hashtags(msgid, hashtags)
 
 		self.z_processor(task, "version_post", processdata)
+
+		#if res == False:
+		#	from tentaculo.api import menu
+		#	menu.todolist()
 
 		return new_filepath
 
@@ -367,7 +389,9 @@ class FManager(object):
 
 			shutil.copy(processdata["local_file_path"], processdata["publish_file_path"])
 
-			versionpath = self.z_save_version(task, fvers, processdata["local_file_path"], processdata["version_file_path"], changed_status)
+			res = wapp.question('Do you want to continue after publish?', 'Publish...')	
+
+			versionpath = self.z_save_version(task, fvers, processdata["local_file_path"], processdata["version_file_path"], (changed_status and res == False))
 			if versionpath is None: versionpath = processdata["publish_file_path"]
 
 			self.log.info('Publish %s file has been successfull.', processdata["publish_file_path"])
@@ -386,6 +410,10 @@ class FManager(object):
 				self.db.db.message_set_hashtags(msgid, hashtags)
 
 		self.z_processor(task, "publish_post", processdata)
+
+		#if res == False:
+		#	from tentaculo.api import menu
+		#	menu.todolist()
 
 		return versionpath
 
@@ -462,9 +490,9 @@ class FManager(object):
 				os.makedirs(os.path.dirname(savepath))
 			
 			if (self.config.net_mode == self.config.MODE_NETWORK and to_move) or self.config.save_mode == self.config.MODE_MOVE:
+				capp.close_file()
 				shutil.move(filepath, savepath)
 				#capp.open_file(self.log, savepath)
-				capp.close_file()
 				#self.config.save_task_file(task, savepath, fvers.last_number+1)
 			else:
 				shutil.copy(filepath, savepath)

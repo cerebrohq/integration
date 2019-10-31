@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtensionList>
+    <Extension Id="ctentaculo.actions">
+        <HostList>
+            <Host Name="PHXS" Port="8081" />
+            <!-- Photoshop    -->
+            <Host Name="AEFT" Port="8081" />
+            <!-- After Effects    -->
+            <Host Name="IDSN" Port="8081" />
+            <!-- InDesign    -->
+            <Host Name="ILST" Port="8081" />
+            <!-- Illustrator    -->
+            <Host Name="FLPR" Port="8081" />
+            <!-- Animate    -->
+            <Host Name="PPRO" Port="8081"/>
+            <!-- Premiere      -->
+        </HostList>
+    </Extension>
+    <Extension Id="ctentaculo.main">
+        <HostList>
+            <Host Name="PHXS" Port="8091" />
+            <!-- Photoshop    -->
+            <Host Name="AEFT" Port="8091" />
+            <!-- After Effects    -->
+            <Host Name="IDSN" Port="8091" />
+            <!-- InDesign    -->
+            <Host Name="ILST" Port="8091" />
+            <!-- Illustrator    -->
+            <Host Name="FLPR" Port="8091" />
+            <!-- Animate    -->
+            <Host Name="PPRO" Port="8091"/>
+            <!-- Premiere      -->
+        </HostList>
+    </Extension>
+</ExtensionList> 

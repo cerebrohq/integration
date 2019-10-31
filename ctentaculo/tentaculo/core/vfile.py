@@ -4,7 +4,11 @@ import os, re
 
 from tentaculo.core import capp, utils
 
-class VFile:
+class VFile(object):
+
+	__slots__ = ('base_name', 'path_local', 'path_version', 'path_publish', 'ver_prefix', 'ver_padding', 'extension',
+			  '__regexp', '__regexpAll', 'is_empty', 'has_versions', 'versions', 'versionsAll', 'last_number', 'next_version',
+			  'current_version', 'publish', 'local')
 
 	def __init__(self, task_config, file_extension = None):
 		self.setConfig(task_config, file_extension)
@@ -58,7 +62,7 @@ class VFile:
 			utils.string_unicode("\.[a-zA-Z]+") if self.extension is None else re.escape(self.extension)
 			))
 
-		self.__regexpAll = re.compile(u"(?:{0})\w*({1})(\d{{0,{2}}})({3})\Z".format(
+		self.__regexpAll = re.compile(u"({0})\w*({1})(\d{{0,{2}}})({3})\Z".format(
 			'|'.join([re.escape(n) for n in task_config.get("name_list", [])]),
 			utils.string_unicode(r"\w*") if self.ver_prefix is None else re.escape(self.ver_prefix),
 			4 if self.ver_padding is None else self.ver_padding,
@@ -72,7 +76,8 @@ class VFile:
 		if self.is_empty: return False
 		if os.path.exists(self.path_version):
 			self.versions = { int(f.group(2)): f.group() for f in map(self.__regexp.match, os.listdir(self.path_version)) if f and os.path.isfile(os.path.join(self.path_version, f.group())) }
-			self.versionsAll = { f.group() : int(f.group(2)) for f in map(self.__regexpAll.match, os.listdir(self.path_version)) if f and os.path.isfile(os.path.join(self.path_version, f.group())) }
+			self.versionsAll = { f.group() : (f.group(1), int(f.group(3))) for f in map(self.__regexpAll.match, os.listdir(self.path_version)) 
+					   if f and os.path.isfile(os.path.join(self.path_version, f.group())) }
 		else:
 			self.versions = {}
 			self.versionsAll = {}

@@ -6,6 +6,7 @@ from tentaculo.api.icerebro import db
 from tentaculo.gui import style, wmessage
 from tentaculo.gui.elements import tasklist, filelist, taskheader, taskcontrols, taskdefinition
 
+from tentaculo import Qt
 from tentaculo.Qt.QtGui import *
 from tentaculo.Qt.QtCore import *
 from tentaculo.Qt.QtWidgets import *
@@ -31,7 +32,9 @@ class w_taskwindow(QWidget):
 			self.TITLE = u"Link/Embed" + uname if link_mode else u"Todo list" + uname
 
 		self.task_updated.connect(self.update_tasks)
+		self.conn.object.task_changed.connect(self.reload_task_data)
 
+		self.browse_path = [u'/']
 		self.tasks_requested = []
 		self.tasks_updated = []
 		self.event_stop = threading.Event()
@@ -50,6 +53,12 @@ class w_taskwindow(QWidget):
 
 	def __delete__(self, instance):
 		self.event_stop.set()
+
+	def reload_task_data(self, task_id):
+		if task_id is not None:
+			with self.lock_tasks:
+				self.tasks_updated.append(int(task_id))
+			self.update_tasks()
 
 	def thread_update(self):
 		while not self.event_stop.is_set():
@@ -86,6 +95,19 @@ class w_taskwindow(QWidget):
 			capp.focus_in()
 		return super(self.__class__, self).event(event)
 
+	def keyPressEvent(self, event):
+		nav = self.tabWidget.currentIndex() == 1
+		if event.matches(QKeySequence.Back):
+			if nav:
+				self.browselist_parent()
+			return
+		elif event.matches(QKeySequence.Forward) or event.key() == Qt.Key_Return:
+			if nav and self.browseList.task_id != None:
+				self.browselist_parent(self.browseList.task_id)
+			return
+
+		return super(self.__class__, self).keyReleaseEvent(event)
+
 	def initStyle(self):
 		styler = style.Styler()
 		styler.initStyle(self)
@@ -98,7 +120,7 @@ class w_taskwindow(QWidget):
 
 		self.selected_task = None
 
-	def save_state(self):
+	def state_save(self):
 		state = {}
 		geometry = self.geometry()
 		state["tab"] = self.tabWidget.currentIndex()
@@ -111,17 +133,21 @@ class w_taskwindow(QWidget):
 		state["window"] = [geometry.x(), geometry.y(), geometry.width(), geometry.height()]
 		jsonio.write(os.path.join(utils.configdir(), self.state_file), state)
 
-	def load_state(self):
+	def state_load(self):
 		state = jsonio.read(os.path.join(utils.configdir(), self.state_file))
 		if state is not None and len(state) > 0:
 			self.tabWidget.setCurrentIndex(state["tab"])
 
 			self.cb_taskSort.setCurrentIndex(state["tasklist"][0])
+			self.cb_browseSort.setCurrentIndex(state["browselist"][0])
 
 			self.taskList.setSortColumn(state["tasklist"][0])
 			self.taskList.setSortColumn(state["tasklist"][0], True if state["tasklist"][1] == Qt.DescendingOrder else False)
 			self.tasklist_select(state["tasklist_id"])
 			self.taskFiles.filter(state["taskfiles"])
+
+			self.browseList.setSortColumn(state["browselist"][0])
+			self.browseList.setSortColumn(state["browselist"][0], True if state["browselist"][1] == Qt.DescendingOrder else False)
 
 			task = self.conn.task(state["browselist_id"])
 			if task is not None:
@@ -144,7 +170,7 @@ class w_taskwindow(QWidget):
 			with self.lock_tasks:
 				if self.taskList.task_id in self.tasks_requested: self.tasks_requested.remove(self.taskList.task_id)
 				self.tasks_requested.append(self.taskList.task_id)
-			self.tasklist_set(self.conn.task(task_id))
+			self.tasklist_set(self.conn.task(task_id, True))
 		else:
 			self.tasklist_clear()
 
@@ -168,6 +194,9 @@ class w_taskwindow(QWidget):
 	def tasklist_sort(self, index):
 		self.taskList.setSortColumn(index, True)
 
+	def browselist_sort(self, index):
+		self.browseList.setSortColumn(index, True)
+
 	def browselist_clear(self):
 		self.browseFiles.clearTask()
 		self.browseHeader.clearTask()
@@ -180,7 +209,7 @@ class w_taskwindow(QWidget):
 			with self.lock_tasks:
 				if self.browseList.task_id in self.tasks_requested: self.tasks_requested.remove(self.browseList.task_id)
 				self.tasks_requested.append(self.browseList.task_id)
-			self.browselist_set(self.conn.task(task_id))
+			self.browselist_set(self.conn.task(task_id, True))
 		else:
 			self.browselist_clear()
 
@@ -202,8 +231,40 @@ class w_taskwindow(QWidget):
 		self.browseList.setTasks(tasks)
 
 		self.pb_browseUp.setVisible(self.conn.current_parent != 0)
-		self.lb_browsePath.setText(self.conn.current_path())
 
+		for i in reversed(range(self.hl_browse_path.count())):
+			widget = self.hl_browse_path.takeAt(i).widget()
+			if widget is not None:
+				widget.setParent(None)
+				widget.deleteLater()
+
+		self.browse_path = [u'/'] + [p for p in self.conn.current_path().split('/') if len(p)]
+		for i in range(len(self.browse_path)):
+			is_current = i == len(self.browse_path) - 1
+			widget = QPushButton(self.browse_path[i], self.frame_9)
+			widget.setObjectName("path")
+			widget.setEnabled(not is_current)
+			widget.clicked.connect(lambda c=None, lvl=i: self.browselist_level(lvl))
+			self.hl_browse_path.addWidget(widget)
+			if not is_current:
+				lb_next = QLabel(">", self.frame_9)
+				lb_next.setObjectName("active")
+				self.hl_browse_path.addWidget(lb_next)
+
+		self.hl_browse_path.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
+
+	def browselist_level(self, level):
+		if level in range(len(self.browse_path) - 1):
+			task_id = None
+			if level == 0:
+				task_id = 0
+			elif level < len(self.browse_path) - 2:
+				url = u'/' + u'/'.join(self.browse_path[1:level + 1])
+				task_id = self.conn.db.task_by_url(url)[0]
+				if task_id is None: return
+
+			self.browselist_parent(task_id)
+	
 	def browselist_parent(self, task_id = None):
 		self.conn.set_parent(task_id)
 		self.browselist_refresh()
@@ -213,20 +274,24 @@ class w_taskwindow(QWidget):
 			with self.lock_tasks:
 				self.tasks_requested[:] = []
 				self.tasks_updated[:] = []
-			self.save_state()
+			self.state_save()
 			self.conn.refresh()
 
 		self.tasklist_refresh()
 		self.browselist_refresh()
-		self.load_state()
+		self.state_load()
 
 	def refresh_task(self, task_id):
-		task = self.conn.refresh_task(task_id)
+		if task_id is not None:
+			task = self.conn.refresh_task(task_id)
+			with self.lock_tasks:
+				if task_id in self.tasks_requested: self.tasks_requested.remove(task_id)
+				self.tasks_requested.append(task_id)
 
-		self.taskList.set_task(task)
-		self.tasklist_set(task, False)
-		self.browseList.set_task(task)
-		self.browselist_set(task, False)
+			self.taskList.set_task(task)
+			self.tasklist_set(task, False)
+			self.browseList.set_task(task)
+			self.browselist_set(task, False)
 
 	def report_task(self, task_id, to_publish = False):
 		if task_id is not None:			
@@ -357,6 +422,7 @@ class w_taskwindow(QWidget):
 		# TASKS LIST
 		self.taskList = tasklist.TaskList(False, tab)
 		self.taskList.clicked.connect(lambda: self.tasklist_select(self.taskList.task_id))
+		self.taskList.refresh.connect(lambda: self.refresh_task(self.taskList.task_id))
 		self.le_search_tasks.textChanged.connect(self.taskList.setFilter)
 
 		verticalLayout_2.addWidget(frame_10)
@@ -444,8 +510,8 @@ class w_taskwindow(QWidget):
 		frame_8.setFixedWidth(400)
 
 		horizontalLayout_13 = QHBoxLayout(frame_8)
-		horizontalLayout_13.setContentsMargins(20, 0, 15, 0)
-		horizontalLayout_13.setSpacing(0)
+		horizontalLayout_13.setContentsMargins(20, 10, 15, 10)
+		horizontalLayout_13.setSpacing(10)
 
 		frame_17 = QFrame(frame_8)
 		frame_17.setFrameShape(QFrame.StyledPanel)
@@ -459,49 +525,74 @@ class w_taskwindow(QWidget):
 		horizontalLayout_15.setContentsMargins(5, 0, 0, 0)
 		horizontalLayout_15.setSpacing(0)
 
-		searchIcon = QLabel(frame_17)
+		searchIcon_2 = QLabel(frame_17)
 		iconfile = utils.getResDir("search.png")
-		searchIcon.setPixmap(QPixmap(iconfile))
-		searchIcon.setFixedSize(26, 26)
-		searchIcon.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+		searchIcon_2.setPixmap(QPixmap(iconfile))
+		searchIcon_2.setFixedSize(26, 26)
+		searchIcon_2.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 
 		self.le_search = QLineEdit(frame_17)
 		self.le_search.setObjectName("search")
 		self.le_search.setPlaceholderText("Search...")
 
-		horizontalLayout_15.addWidget(searchIcon)
+		horizontalLayout_15.addWidget(searchIcon_2)
 		horizontalLayout_15.addWidget(self.le_search)
 
 		# BROWSE FILTER SETTINGS
-		#self.toolButton_2 = QToolButton(frame_8)
-		#self.toolButton_2.setObjectName("settings")
-		#self.toolButton_2.setPopupMode(QToolButton.InstantPopup)
+		self.toolButton_2 = QPushButton(frame_8)
+		self.toolButton_2.setObjectName("settings")
+		self.toolButton_2.setFixedWidth(40)
+		self.toolButton_2.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
+		self.toolButton_2.setCheckable(True)
+		self.toolButton_2.setChecked(False)
+		self.toolButton_2.toggled.connect(lambda show: self.fr_browse_sort.setVisible(show))
 
-		#self.toolMenu_2 = QMenu(self.toolButton_2)
-		#self.toolMenu_2.addAction("1 Test action")
-		#self.toolMenu_2.addAction("2 Test action")
-
-		#self.toolButton_2.setMenu(self.toolMenu_2)
-
+		horizontalLayout_13.addWidget(self.toolButton_2)
 		horizontalLayout_13.addWidget(frame_17)
-		#horizontalLayout_13.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
-		#horizontalLayout_13.addWidget(self.toolButton_2)
+
+		# BROWSE SORT
+		self.fr_browse_sort = QFrame(tab)
+		self.fr_browse_sort.setFrameShape(QFrame.StyledPanel)
+		self.fr_browse_sort.setFrameShadow(QFrame.Raised)
+		self.fr_browse_sort.setObjectName("tasksSort")
+		self.fr_browse_sort.setFixedWidth(400)
+		self.fr_browse_sort.setVisible(False)
+
+		horizontalLayout_1 = QHBoxLayout(self.fr_browse_sort)
+		horizontalLayout_1.setContentsMargins(20, 0, 15, 0)
+		horizontalLayout_1.setSpacing(10)
+
+		label_2 = QLabel("Sort by:", self.fr_browse_sort)
+		label_2.setFixedWidth(40)
+
+		self.cb_browseSort = QComboBox(self)
+		self.cb_browseSort.setFixedHeight(26)
+		self.cb_browseSort.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+		view_2 = QListView(self.cb_browseSort)
+		self.cb_browseSort.setView(view_2)
+		self.cb_browseSort.addItem("Task Name")
+		self.cb_browseSort.addItem("Status")
+		self.cb_browseSort.addItem("Activity")
+		self.cb_browseSort.addItem("Deadline")
+		self.cb_browseSort.addItem("Order")
+		self.cb_browseSort.addItem("Project")
+		# Set default to order
+		self.cb_browseSort.setCurrentIndex(4)
+		self.cb_browseSort.activated.connect(self.browselist_sort)
+		
+		horizontalLayout_1.addWidget(label_2)
+		horizontalLayout_1.addWidget(self.cb_browseSort)
 
 		# BROWSE PATH
-		frame_9 = QFrame(tab_2)
-		frame_9.setFrameShape(QFrame.StyledPanel)
-		frame_9.setFrameShadow(QFrame.Raised)
-		frame_9.setObjectName("browsePath")
-		frame_9.setFixedWidth(400)
+		self.frame_9 = QFrame(tab_2)
+		self.frame_9.setFrameShape(QFrame.StyledPanel)
+		self.frame_9.setFrameShadow(QFrame.Raised)
+		self.frame_9.setObjectName("browsePath")
+		self.frame_9.setFixedWidth(400)
 
-		horizontalLayout_12 = QHBoxLayout(frame_9)
-		horizontalLayout_12.setContentsMargins(20, 0, 20, 0)
-		horizontalLayout_12.setSpacing(0)
-
-		self.lb_browsePath = QLabel("/", frame_9)
-		self.lb_browsePath.setObjectName("active")
-
-		horizontalLayout_12.addWidget(self.lb_browsePath)
+		self.hl_browse_path = QHBoxLayout(self.frame_9)
+		self.hl_browse_path.setContentsMargins(20, 0, 20, 0)
+		self.hl_browse_path.setSpacing(2)
 
 		# BROWSE UP BUTTON
 		self.pb_browseUp = QPushButton("Back", tab_2)
@@ -516,10 +607,12 @@ class w_taskwindow(QWidget):
 		self.browseList = tasklist.TaskList(True, tab_2)
 		self.browseList.clicked.connect(lambda: self.browselist_select(self.browseList.task_id))
 		self.browseList.doubleClicked.connect(lambda: self.browselist_parent(self.browseList.task_id))
+		self.browseList.refresh.connect(lambda: self.refresh_task(self.browseList.task_id))
 		self.le_search.textChanged.connect(self.browseList.setFilter)
 
 		verticalLayout_17.addWidget(frame_8)
-		verticalLayout_17.addWidget(frame_9)
+		verticalLayout_17.addWidget(self.fr_browse_sort)
+		verticalLayout_17.addWidget(self.frame_9)
 		verticalLayout_17.addWidget(self.pb_browseUp)
 		verticalLayout_17.addWidget(self.browseList)
 
@@ -597,7 +690,7 @@ class w_taskwindow(QWidget):
 	def closeEvent(self, event):
 		self.hide()
 		self.event_stop.set()
-		self.save_state()
+		self.state_save()
 		#event.accept()
 		self.thread.join()
 		self.close()

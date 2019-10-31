@@ -80,8 +80,12 @@ class w_sendmsg(QDialog):
 		self.tableWidget.clear()
 		self.tableWidget.setRowCount(len(self.attachments))
 		for i, fpath in enumerate(self.attachments):
-			self.tableWidget.setItem(i, 0, QTableWidgetItem("{0}".format(u"LINK" if self.attachments[fpath] else u"ATTACH")))
-			self.tableWidget.setItem(i, 1, QTableWidgetItem(fpath))
+			itmType = QTableWidgetItem("{0}".format(u"LINK" if self.attachments[fpath] else u"ATTACH"))
+			itmPath = QTableWidgetItem(fpath)
+			itmType.setFlags(itmType.flags() & ~Qt.ItemIsEditable)
+			itmPath.setFlags(itmPath.flags() & ~Qt.ItemIsEditable)
+			self.tableWidget.setItem(i, 0, itmType)
+			self.tableWidget.setItem(i, 1, itmPath)
 
 	def __popupAt(self, pos):
 		index = self.tableWidget.indexAt(pos)
@@ -92,7 +96,7 @@ class w_sendmsg(QDialog):
 		styler.initStyle(menu)
 
 		acts = []
-		menu_options = ["Delete", "Change type"]
+		menu_options = ["Delete", "Change type", "Show in Explorer"]
 		for opt in menu_options:
 			if opt is None:
 				menu.addSeparator()
@@ -108,6 +112,8 @@ class w_sendmsg(QDialog):
 			elif ind == 1:
 				self.attachments[item] = not self.attachments[item]
 				self.update_files()
+			elif ind == 2:
+				utils.show_dir(item)
 
 		except ValueError:
 			pass

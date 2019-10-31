@@ -16,11 +16,9 @@ XMLRPC_PORT = 4040
 HTTP_PORT = 4080
 
 
-class Cargo():
+class Cargo(object):
 
-	log = None
-	storages = {}
-	current_uid = None
+	__slots__ = ('log', 'conf', 'storages', 'current_uid')
 	
 	def __init__(self, log):
 		self.log = log

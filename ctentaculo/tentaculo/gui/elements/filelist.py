@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import os, datetime
-from tentaculo.gui import style
+from tentaculo.gui import style, wapp
 
 from tentaculo.core import capp, fmanager, config, clogger, vfile, utils
 from tentaculo.api.icerebro import db
@@ -65,7 +65,7 @@ class FileList(QFrame):
 
 		horizontalSpacer_2 = QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
 
-		self.pb_filterVersions = QPushButton("Show Recent Versions", self)
+		self.pb_filterVersions = QPushButton("Show All Versions", self)
 		self.pb_filterVersions.setObjectName("flat")
 		self.pb_filterVersions.clicked.connect(self.filter_toggle)
 
@@ -171,19 +171,19 @@ class FileList(QFrame):
 	def filter(self, mode = 0):
 		self.__filter_mode = mode
 		if self.__filter_mode == 0:
-			self.pb_filterVersions.setText("Show Recent Versions")
+			self.pb_filterVersions.setText("Show All Versions")
 
 			for i in range(self.tableWidget.rowCount()):
 				fitem = self.tableWidget.item(i, 1)
 				self.tableWidget.setRowHidden(i, self.__link_mode and fitem.is_local)
 		elif self.__filter_mode == 1:
-			self.pb_filterVersions.setText("Hide Versions")
+			self.pb_filterVersions.setText("Show Recent Versions")
 
 			for i in range(self.tableWidget.rowCount()):
 				fitem = self.tableWidget.item(i, 1)
 				self.tableWidget.setRowHidden(i, not fitem.is_publish and (not fitem.is_local or self.__link_mode) and not fitem.is_last)
 		elif self.__filter_mode == 2:
-			self.pb_filterVersions.setText("Show All Versions")
+			self.pb_filterVersions.setText("Hide Versions")
 
 			for i in range(self.tableWidget.rowCount()):
 				fitem = self.tableWidget.item(i, 1)
@@ -318,36 +318,29 @@ class FileList(QFrame):
 		index = self.tableWidget.indexAt(pos)
 		if not index.isValid(): return
 
-		menu = QMenu()
-		styler = style.Styler()
-		styler.initStyle(menu)
+		if self.__selected_task_id is not None:
+			task = self.conn.task(self.__selected_task_id)
+			if task is not None:
+				menu_options = ["Start working on this file", "Open without Starting the Task", None, "Link", "Embed", None, "Show in Explorer...", "Copy file path to Clipboard"]
+				extra = { "file_path": self.__selected_file_path }
+				res = wapp.menu(task, self.tableWidget.viewport().mapToGlobal(pos), menu_options, "menu_file", extra)
 
-		acts = []
-		menu_options = ["Start working on this file", "Open without Starting the Task", None, "Link", "Embed", None, "Show in Explorer", "Copy Local Path to Clipboard"]
-		for opt in menu_options:
-			if opt is None:
-				menu.addSeparator()
-			else:
-				action = menu.addAction(opt)
-				acts.append(action)
-		try:
-			ind = acts.index(menu.exec_(self.tableWidget.viewport().mapToGlobal(pos)))
-			if ind == 0:
-				self.startTask()
-			elif ind == 1:
-				self.openSelectedFile()
-			elif ind == 2:
-				self.importSelectedFile(True)
-			elif ind == 3:
-				self.importSelectedFile(False)
-			elif ind == 4:
-				if self.__selected_file_path is not None:
-					utils.show_dir(self.__selected_file_path)
-			elif ind == 5:
-				if self.__selected_file_path is not None:
-					capp.copyToClipboard(self.__selected_file_path)
-		except ValueError:
-			pass
+				if res is not None and res in menu_options:
+					if res == menu_options[0]:
+						self.startTask()
+					elif res == menu_options[1]:
+						self.openSelectedFile()
+					elif res == menu_options[3]:
+						self.importSelectedFile(True)
+					elif res == menu_options[4]:
+						self.importSelectedFile(False)
+					elif res == menu_options[6]:
+						if self.__selected_file_path is not None:
+							if not utils.show_dir(self.__selected_file_path):
+								wapp.error("File does not exist: {}".format(self.__selected_file_path))
+					elif res == menu_options[7]:
+						if self.__selected_file_path is not None:
+							capp.copyToClipboard(self.__selected_file_path)
 
 	def __cellChanged(self, newRow, newCol, lastRow = 0, lastCol = 0):
 		fitem = self.tableWidget.item(newRow, 1)

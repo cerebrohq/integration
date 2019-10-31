@@ -6,6 +6,12 @@ from transliterate import slugify, detect_language
 
 # WARNING: This is SINGLETON
 class Config(object):
+
+	__slots__ = ('log', 'netpaths', 'mirada_path', 'config_unid', 'config_pool', 'task_filenames', 'source_taskfile',
+			  'config_taskfile', 'config_task', 'defPaths', 'roots', 'net_mode', 'save_mode', 'trans_mode',
+			  'status_list', 'local_dir', 're_path', 're_path_simple')
+
+	# singleton instance
 	__instance = None
 
 	MODE_LOCAL = 0
@@ -18,7 +24,6 @@ class Config(object):
 	def __new__(cls, *args, **kwargs):
 		if not isinstance(cls.__instance, cls):
 			cls.__instance = super(Config, cls).__new__(cls, *args, **kwargs)
-			cls.__instance.__initialized = False
 			cls.__instance()
 		return cls.__instance
 		
@@ -42,9 +47,12 @@ class Config(object):
 		# Task -> file config
 		self.source_taskfile = "taskfile_config.json"
 		self.config_taskfile = {}
-		# Defaults		
-		self.clear_config()
+		# Defaults
+		self.select_config("local")
 		self.load_task_file()
+		# Compile regex
+		self.re_path = re.compile(r"\$\((.+?)(\[-?\d*\:-?\d*\])?\)")
+		self.re_path_simple = re.compile(r"\$\((.+?)(?:\[-?\d*\:-?\d*\])?\)")
 
 	def clear_config(self):
 		self.config_task = {}
@@ -53,6 +61,7 @@ class Config(object):
 		self.net_mode = self.MODE_NETWORK
 		self.save_mode = self.MODE_COPY
 		self.trans_mode = False
+		self.status_list = []
 
 	def set_local_dir(self, dir):
 		self.local_dir = dir
@@ -74,6 +83,7 @@ class Config(object):
 		net_mode = self.MODE_NETWORK
 		save_mode = self.MODE_COPY
 		trans_mode = False
+		status_list = []
 		# Project paths
 		project_paths = cfg["project_path"]
 		for paths in project_paths:
@@ -113,6 +123,15 @@ class Config(object):
 			save_mode = modes.index(mode)
 			self.log.debug("save_mode is set to %s", modes[save_mode])
 
+		# Display statuses list
+		status_list = cfg.get("status_filter", [])
+		if not isinstance(status_list, (list)):
+			self.log.warning("status_filter must be an array of strings. Using default algorythm")
+			status_list = []
+		else:
+			status_list = [ n.lower() for n in status_list if hasattr(n, "lower") ]
+			self.log.debug("status_filter is set to %s", repr(status_list))
+
 		# Mirada executable path
 		mirada = cfg.get("mirada_path", {}).get(utils.HOST_OS, None)
 		if mirada is not None and os.path.exists(mirada):
@@ -123,7 +142,7 @@ class Config(object):
 		cfgDefPaths = [item for item in cfg["file_path"] if item.get("folder_path", "") == "" and item.get("task_activity", "") == ""]
 		defPaths = cfgDefPaths[0] if len(cfgDefPaths) > 0 else defPaths
 
-		self.config_pool[unid] = (cfg, roots, defPaths, trans_mode, net_mode, save_mode)
+		self.config_pool[unid] = (cfg, roots, defPaths, trans_mode, net_mode, save_mode, status_list)
 
 		self.log.info("Successfully loaded config for %s.", unid)
 
@@ -141,6 +160,7 @@ class Config(object):
 				self.trans_mode = self.config_pool[unid][3]
 				self.net_mode = self.config_pool[unid][4]
 				self.save_mode = self.config_pool[unid][5]
+				self.status_list = self.config_pool[unid][6]
 
 	def load_task_file(self):
 		self.config_taskfile = jsonio.read(os.path.join(utils.configdir(), self.source_taskfile))
@@ -155,11 +175,24 @@ class Config(object):
 		self.config_taskfile[filepath] = {}
 		self.config_taskfile[filepath]["id"] = task["id"]
 		self.config_taskfile[filepath]["version"] = version
-		self.config_taskfile[filepath]["time"] = (datetime.datetime.now() - datetime.datetime.fromtimestamp(0)).total_seconds()
+		self.config_taskfile[filepath]["time"] = (datetime.datetime.now() - datetime.datetime.fromtimestamp(86400)).total_seconds()
 
 		jsonio.write(os.path.join(utils.configdir(), self.source_taskfile), self.config_taskfile)
 
 	def mirada(self):
+		if self.mirada_path is None or not os.path.exists(self.mirada_path):
+			mp = None
+			if utils.HOST_OS == "windows":
+				app_path = os.environ.get("CEREBRO", None)
+				if app_path is None or not os.path.exists(app_path): app_path = r"C:\Program Files\Cerebro"
+				if not os.path.exists(app_path): app_path = r"C:\Program Files (x86)\Cerebro"
+				mp = os.path.normpath(os.path.join(app_path, "mirada.exe"))
+			elif utils.HOST_OS == "darwin":
+				mp = r"/Applications/Cerebro/Mirada.app"
+
+			if mp is not None and os.path.exists(mp):
+				self.mirada_path = mp
+
 		return self.mirada_path
 		
 	def redirect_path(self, path):
@@ -182,7 +215,7 @@ class Config(object):
 		if filepath is None: return None
 		filepath = os.path.normcase(os.path.normpath(filepath))
 		conf = self.config_taskfile.get(filepath, None)
-		return None if conf is None else datetime.datetime.fromtimestamp(conf["time"])
+		return None if conf is None else datetime.datetime.fromtimestamp(conf["time"] + 86400)
 	
 	def task_valid(self, task):
 		if task["valid_task"] is None or task["valid_parent"] is None:
@@ -190,10 +223,15 @@ class Config(object):
 
 		return [task["valid_task"], task["valid_parent"]]
 
-	def processorinfo(self, task_unid, function_name):
+	def processor_info(self, task_unid, function_name, proc_name = None, function_override = None):
 		self.select_config(task_unid)
+
 		res = (None, None)
-		app_proc = self.config_task.get("processors", {}).get(capp.HOST_NAME, {}).get(function_name, None)
+		if function_override is not None and isinstance(function_override, dict):
+			app_proc = function_override
+		else:
+			app_proc = self.config_task.get("processors", {}).get(capp.HOST_NAME if proc_name is None else proc_name, {}).get(function_name, None)
+
 		if app_proc is not None:
 			app_script = app_proc.get("script_path", None)
 			app_func = app_proc.get("function", None)
@@ -248,10 +286,10 @@ class Config(object):
 
 			if not isinstance(url, (int, bool)) and len(url) > 0:
 				for i in range(len(items)):
-					keys = re.findall(r"\$\(([^/\$]+)\)", items[i])
+					keys = self.re_path_simple.findall(items[i])
 
 					for k in keys:
-						if not k in string_vars:
+						if not k in string_vars and not k.startswith("url["):
 							env_var = os.environ.get(k)
 							if env_var is not None:
 								string_vars[k] = env_var
@@ -260,8 +298,15 @@ class Config(object):
 								# TODO: raise error? set empty string?
 								pass
 
-					for name, var in string_vars.items():
-						items[i] = items[i].replace(r"$({0})".format(name), var)
+					for rmatch in self.re_path.finditer(items[i]):
+						name, cut = rmatch.groups()
+						if name is not None and name in string_vars:
+							repl = string_vars[name]
+							if cut is not None:
+								f, t = cut[1:-1].split(':')
+								f, t = utils.parseInt(f, None), utils.parseInt(t, None)
+								repl = repl[f:t]
+							items[i] = items[i].replace(rmatch.group(), repl)
 
 					if key in paths:
 						items[i] = os.path.normpath(os.path.join(root, items[i]))
@@ -304,12 +349,11 @@ class Config(object):
 		task["publish_status"] = task_paths.get("publish_status", None)
 
 		# Set default local location
-		local = task_paths["publish"] if len(task_paths.get("publish", "")) > 0 else task_paths.get("version", "")
+		task_paths.setdefault("local", task_paths["publish"] if len(task_paths.get("publish", "")) > 0 else task_paths.get("version", ""))
 		if self.net_mode == self.MODE_LOCAL and self.local_dir is not None:
-			local = local.replace(root, self.local_dir)
+			task_paths["local"] = os.path.normpath(task_paths["local"].replace(root, self.local_dir))
 
-		self.log.debug('Local self.local_dir: %s; local: %s', self.local_dir, local)
-		task_paths.setdefault('local', os.path.normpath(local))
+		self.log.debug('Local self.local_dir: %s; local: %s', self.local_dir, task_paths["local"])
 
 		# Set default values if empty
 		for key in paths:
@@ -344,15 +388,17 @@ class Config(object):
 				if len(folder) == 0 and len(activity) == 0: continue
 				folder = folder[1:] if folder.startswith('/') else folder
 				# Path substitute
+				sub_count = 0
 				for i, p in enumerate(task_parts):
+					sub_count += folder.count(r"$(url[{0}])".format(i))
 					folder = folder.replace(r"$(url[{0}])".format(i), p)
 
 				if (len(folder) == 0 or task_path.startswith(folder)) and (len(activity) == 0 or task["activity"] == activity):
 					depth = len([ i for i in folder.replace('\\', '/').split('/') if len(i) > 0 ])
-					if not depth in spec or task["activity"] == activity:
-						spec[depth] = fp
+					if not depth in spec or spec[depth][1] > sub_count or (spec[depth][1] == sub_count and task["activity"] == activity):
+						spec[depth] = (fp, sub_count)
 
 			self.log.debug('file_path specifity: %s', spec)
-			return spec[max(spec)] if len(spec) > 0 else self.defPaths
+			return spec[max(spec)][0] if len(spec) > 0 else self.defPaths
 		else:
 			return self.defPaths

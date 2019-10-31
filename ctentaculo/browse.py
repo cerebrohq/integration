@@ -8,7 +8,7 @@ dn = os.path.normpath(os.path.dirname(__file__))
 if not dn in sys.path:
 	sys.path.append(dn)
 
-from tentaculo.core import utils, config, jsonio
+from tentaculo.core import utils, jsonio
 from tentaculo.api.icerebro import db
 
 def cerebro_message(text):
@@ -24,6 +24,7 @@ def connect_db():
 
 def browse():
 	try:
+		from tentaculo.core import config
 		db = connect_db()
 		conf = config.Config()
 		task_data = cerebro.core.current_task().data()
@@ -31,7 +32,8 @@ def browse():
 		task = db.task(task_data[cerebro.aclasses.Task.DATA_ID])
 		task_paths = conf.translate(task)
 		if task_paths is not None:
-			opened = utils.show_dir(task_paths["version"] if task_paths.get("publish", None) is None else task_paths["publish"])
+			open_path = task_paths["publish"] if len(task_paths.get("publish", "")) > 0 else task_paths.get("version", None)
+			opened = utils.show_dir(open_path)
 			if not opened:
 				cerebro_message("Task folder does not exist!")
 		else:
@@ -44,6 +46,7 @@ def make_dirs():
 	# Config lookup keys
 	path_list = ["version", "publish", "local"]
 	try:
+		from tentaculo.core import config
 		db = connect_db()
 		conf = config.Config()
 
@@ -82,8 +85,9 @@ def make_dirs():
 			query_text += " and (lower(t.cc_url) like lower('%{0}%'))".format(cerebro_task.parent_url() + cerebro_task.name())
 			tasks_list = [ t[0] for t in db.db.execute("select * from \"search_Tasks\"(%s::bigint[], ''::text, %s::text, 1000);", prj_ids , query_text) ]
 		
-			# Add current task
-			#tasks_list.append(cerebro_task_data[cerebro.aclasses.Task.DATA_ID])
+			# Add current task if has not children 
+			if len(tasks_list) == 0:
+				tasks_list.append(cerebro_task_data[cerebro.aclasses.Task.DATA_ID])
 
 			tsks = db.db.tasks(tasks_list)
 			db.update_tasks(tsks)

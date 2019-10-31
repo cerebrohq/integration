@@ -2,7 +2,8 @@
 
 from __future__ import print_function
 from distutils import dir_util
-import os, platform, shutil, re, datetime, logging, tempfile, inspect, json, codecs
+from zipfile import ZipFile
+import os, platform, shutil, re, datetime, logging, tempfile, inspect, json, codecs, subprocess
 try:
 	import winreg
 except:
@@ -18,6 +19,7 @@ except ImportError:
 	from tentaculo.Qt.QtWidgets import *
 
 FCONFIG = 'tentaculo_install'
+CREATE_NO_WINDOW = 0x08000000
 
 INST_STANDALONE = True
 INST_NETWORK = False
@@ -157,6 +159,7 @@ def host_apps():
 	prefs["Revit"] = host_revit()
 	prefs["Toon Boom"] = host_tbharmony()
 	prefs["Katana"] = host_katana()
+	prefs["Adobe"] = host_adobe()
 
 	return prefs
 
@@ -326,6 +329,24 @@ def host_katana():
 
 	return paths
 
+def host_adobe():
+	paths = []
+	lookup_path = appdata_dir()
+
+	if HOST_OS == 'windows':
+		out = subprocess.run(os.path.join(source_dir(), "adobe", "ExManBridgeTalkCmd.exe"), check=True, stdout=subprocess.PIPE, creationflags=CREATE_NO_WINDOW).stdout.decode('utf-8')
+		paths = re.findall("path='(.+?)'", out)
+		lookup_path = os.path.join(lookup_path, "Adobe")
+	elif HOST_OS == 'linux':
+		pass
+	elif HOST_OS == 'darwin':
+		pass
+
+	if len(paths) == 0:
+		paths = find_apps(lookup_path, "Adobe")
+
+	return paths
+
 
 # PATHS LOOKUP
 def install_paths(appname):
@@ -403,7 +424,7 @@ def np(path):
 def evar_clear_win(token):
 	token = np(token)
 	sep = os.path.pathsep
-	vars = ["PYTHONPATH", "NUKE_PATH", "PATH", "MAYA_MODULE_PATH", "MAYA_SCRIPT_PATH", "HOUDINI_MENU_PATH"]
+	vars = ["PYTHONPATH", "NUKE_PATH", "PATH", "MAYA_MODULE_PATH", "MAYA_SCRIPT_PATH", "HOUDINI_MENU_PATH", token]
 	for var in vars:
 		path_string = ""
 
@@ -478,6 +499,8 @@ class w_installer(QWidget):
 			self.lb_prev.setText(self.prevversion[1])
 		self.inst_line.setText(self.dir_install)
 
+		self.evar_list = {}
+
 		self.log.debug('host: ' + HOST_OS)
 		self.log.debug('home: ' + self.dir_home)
 		self.log.debug('config dir: ' + self.dir_cfg)
@@ -511,10 +534,14 @@ class w_installer(QWidget):
 		return self.dir_install
 
 	def w_confirm_install(self, update = False):
-		
+		global INST_NETWORK
+
 		mb_confirm = QMessageBox()
 		mb_confirm.setWindowTitle("{0} v{1}".format("Update Cerebro Tentaculo" if update else "Confirm installation", version.APP_VERSION))
-		mb_confirm.setText("Install to: {0} ?".format(self.dir_install))
+		if INST_NETWORK:
+			mb_confirm.setText("Install network tentaculo plugin?")
+		else:
+			mb_confirm.setText("Install to: {0} ?".format(self.dir_install))
 
 		b_install = mb_confirm.addButton("Update" if update else "Install", QMessageBox.ApplyRole)
 		b_cancel = mb_confirm.addButton("Cancel", QMessageBox.RejectRole)
@@ -538,29 +565,25 @@ class w_installer(QWidget):
 					evar_clear_win(PLUGIN_EVAR)
 				else:
 					self.install_files()
-				self.progress(10)
+				self.progress(70)
 				if not SETUP_NETWORK:
 					self.install_cerebro()
-					self.progress(20)
 					self.install_system()
-					self.progress(60)
-					self.install_maya()
-					self.progress(65)
-					self.install_max()
-					self.progress(70)
-					self.install_houdini()
-					self.progress(75)
-					self.install_nuke()
 					self.progress(80)
-					self.install_c4d()
+					self.install_maya()
+					self.install_max()
+					self.install_houdini()
+					self.install_nuke()
 					self.progress(85)
+					self.install_c4d()
 					self.install_blender()
-					self.progress(90)
 					self.install_autocad()
-					self.progress(95)
 					self.install_revit()
 					self.install_tbharmony()
+					self.progress(95)
 					self.install_katana()
+					self.install_adobe()
+					self.evar_apply_unix()
 
 				self.progress(100)
 				result = True
@@ -589,10 +612,16 @@ class w_installer(QWidget):
 			paths = [ os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), p)) for p in adds ]
 
 			self.evar_set_win("PYTHONPATH", paths)
-			# PATH
-			self.evar_set_win("PATH", [os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r'python'))])
+			# PATH - python executable
+			self.evar_set_win("PATH", [os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), 'python'))])
+		else:
+			self.evar_prepare_unix("QT_AUTO_SCREEN_SCALE_FACTOR", ["1"], True)
+			self.evar_prepare_unix(PLUGIN_EVAR, [self.dir_install], True)
+			self.evar_prepare_unix("PYTHONPATH", [PLUGIN_EVAR, os.path.join(PLUGIN_EVAR, 'tentaculo')])
+			self.evar_prepare_unix("PATH", [os.path.join(PLUGIN_EVAR, 'python')])
 
-		elif HOST_OS == "linux":
+	def evar_apply_unix(self):
+		if HOST_OS == "linux":
 			self.evar_setup_linux()
 		elif HOST_OS == "darwin":
 			self.evar_setup_mac()
@@ -605,14 +634,14 @@ class w_installer(QWidget):
 		if not os.path.exists(self.dir_cfg):
 			os.makedirs(self.dir_cfg)
 
-		files = []
+		#files = []
 		#files.append('cargador.personal.conf')
-		files.append('path_config.json')
-		for f in files:
-			fullpath = os.path.join(self.dir_source, f)
-			if os.path.isfile(fullpath):
-				shutil.copy(fullpath, self.dir_cfg)
-		self.status('Cerebro config files have been updated')
+		#files.append('path_config.json')
+		#for f in files:
+		#	fullpath = os.path.join(self.dir_source, f)
+		#	if os.path.isfile(fullpath):
+		#		shutil.copy(fullpath, self.dir_cfg)
+		#self.status('Cerebro config files have been updated')
 
 		data = dict()
 		data['date'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -635,15 +664,26 @@ class w_installer(QWidget):
 
 		self.status("Copying files")
 		try:
-			exclude_list = ["__pycache__"] if SETUP_NETWORK else ["__pycache__", "libs3", "install.py", "client", "browse.py", "logon.py"]
+			exclude_list = ["__pycache__"] if SETUP_NETWORK else ["__pycache__", "adobe", "libs3", "install.py", "client", "browse.py", "logon.py"]
 			copy_tree(self.dir_source, self.dir_install, True, exclude_list)
 			if not SETUP_NETWORK:
 				copy_tree(os.path.join(self.dir_source, "libs3", "crossplatform"), os.path.join(self.dir_install, "libs3", "crossplatform"))
 				copy_tree(os.path.join(self.dir_source, "libs3", HOST_OS), os.path.join(self.dir_install, "libs3", HOST_OS))
 
+			self.progress(50)
+
+			if SETUP_NETWORK or len(self.apps["Adobe"]) > 0:
+				self.status("Extracting Adobe plugin")
+				dst = os.path.join(self.dir_install, "adobe", "ctentaculo")
+				src = os.path.join(self.dir_source, "adobe", "ctentaculo.zxp")
+				if not os.path.exists(dst):
+					os.makedirs(dst)
+				with ZipFile(src, 'r') as zip_ref:
+					zip_ref.extractall(dst)
+
 			result = True
 		except Exception as err:
-			self.log.error(repr(err))
+			self.log.error(repr(err), exc_info=1)
 			self.status(inspect.stack()[0][3]+' failed, ' + exit_host_msg)
 			raise Exception("Install files copy failed")	
 
@@ -686,6 +726,11 @@ class w_installer(QWidget):
 			self.evar_set_win("MAYA_MODULE_PATH", [dir])
 			self.evar_set_win("MAYA_SCRIPT_PATH", [dir])
 			self.evar_set_win("PYTHONPATH", [dir])
+		else:
+			dir = os.path.join(PLUGIN_EVAR, r"tentaculo/api/imaya")
+			self.evar_prepare_unix("MAYA_MODULE_PATH", [dir])
+			self.evar_prepare_unix("MAYA_SCRIPT_PATH", [dir])
+			self.evar_prepare_unix("PYTHONPATH", [dir])
 
 	def install_max(self):
 		global PLUGIN_EVAR
@@ -695,7 +740,9 @@ class w_installer(QWidget):
 			#dir = os.path.abspath(os.path.join(self.dir_install, r"tentaculo/api/imax"))
 			dir = os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/imax"))
 			self.evar_set_win("PATH", [dir])
-			#self.evar_set_win("PYTHONPATH", [dir])
+		else:
+			dir = os.path.join(PLUGIN_EVAR, r"tentaculo/api/imax")
+			self.evar_prepare_unix("PATH", [dir])
 
 	def install_nuke(self):
 		global PLUGIN_EVAR
@@ -706,6 +753,10 @@ class w_installer(QWidget):
 			dir = os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/inuke"))
 			self.evar_set_win("NUKE_PATH", [dir])
 			self.evar_set_win("PYTHONPATH", [dir])
+		else:
+			dir = os.path.join(PLUGIN_EVAR, r"tentaculo/api/inuke")
+			self.evar_prepare_unix("NUKE_PATH", [dir])
+			self.evar_prepare_unix("PYTHONPATH", [dir])
 
 	def install_houdini(self):
 		global PLUGIN_EVAR
@@ -715,6 +766,9 @@ class w_installer(QWidget):
 			#dir = os.path.abspath(os.path.join(self.dir_install, r"tentaculo/api/ihoudini"))
 			dir = os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/ihoudini"))
 			self.evar_set_win("HOUDINI_MENU_PATH", ['&', dir])
+		else:
+			dir = os.path.join(PLUGIN_EVAR, r"tentaculo/api/ihoudini")
+			self.evar_prepare_unix("HOUDINI_MENU_PATH", ['&', dir])
 
 	def install_c4d(self):
 		if len(self.apps["Cinema 4D"]) == 0 : return False
@@ -736,16 +790,33 @@ class w_installer(QWidget):
 			#dir = os.path.abspath(os.path.join(self.dir_install, r"tentaculo/api/iblender"))
 			dir = os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/iblender"))
 			self.evar_set_win("PYTHONPATH", [dir])
+		else:
+			dir = os.path.join(PLUGIN_EVAR, r"tentaculo/api/iblender")
+			self.evar_prepare_unix("PYTHONPATH", [dir])
 
-		src_file = os.path.join(self.dir_source, r"tentaculo/api/iblender/cerebroBlender.py")
 		for dir in self.apps["Blender"]:
+			ver = os.path.basename(dir)
+			ver_new = '.' in ver and float(ver) > 2.79
+			# startup script
 			copy_dir = os.path.join(dir, r"scripts/startup")
+			src_file = os.path.join(self.dir_source, r"tentaculo/api/iblender", "cerebroBlender28.py" if ver_new else "cerebroBlender.py")
 			if os.path.exists(copy_dir):
 				try:
 					shutil.copy(src_file, copy_dir)
 				except:
 					self.log.error("Unable to copy {0} to {1}".format(src_file, copy_dir))
 					cerebro_message("Manual copy required! {0} to {1}".format(src_file, copy_dir))
+			# python3.dll missing in 2.8
+			ver = os.path.basename(dir)
+			if ver_new and HOST_OS == "windows":
+				copy_dir = os.path.dirname(dir)
+				src_file = os.path.join(self.dir_source, r"libs3/windows/python37/python3.dll")
+				if not os.path.exists(os.path.join(copy_dir, "python3.dll")):
+					try:
+						shutil.copy(src_file, copy_dir)
+					except:
+						self.log.error("Unable to copy {0} to {1}".format(src_file, copy_dir))
+						cerebro_message("Manual copy required! {0} to {1}".format(src_file, copy_dir))
 
 	def install_autocad(self):
 		if len(self.apps["Autocad"]) == 0 : return False
@@ -787,6 +858,27 @@ class w_installer(QWidget):
 		if HOST_OS == "windows":
 			dir = os.path.normpath(os.path.join("%{0}%".format(PLUGIN_EVAR), r"tentaculo/api/ikatana"))
 			self.evar_set_win("KATANA_RESOURCES", [dir])
+		else:
+			dir = os.path.join(PLUGIN_EVAR, r"tentaculo/api/ikatana")
+			self.evar_prepare_unix("KATANA_RESOURCES", [dir])
+
+	def install_adobe(self):
+		global PLUGIN_EVAR
+		if len(self.apps["Adobe"]) == 0 : return False
+
+		src = os.path.normpath(os.path.join(self.dir_install, "adobe", "ctentaculo"))
+		dst = os.path.normpath(os.path.join(appdata_dir(), "Adobe", "CEP", "extensions"))
+		if not os.path.exists(dst):
+			os.makedirs(dst)
+		dst = os.path.join(dst, "ctentaculo")
+		try:
+			if HOST_OS == 'windows':
+				subprocess.call('{0} "{1}" "{2}"'.format(os.path.normpath(os.path.join(self.dir_source, "adobe", "make_links.cmd")), src, dst), creationflags=CREATE_NO_WINDOW)
+			else:
+				os.symlink(src, dst)
+		except:
+			self.log.error("Unable to make symlink {0} to {1}".format(src, dst))
+			cerebro_message("Manual symlink creation required! {0} to {1}".format(src, dst))
 
 	# ENVIRONMENT
 	def evar_set_win(self, evar, values, replace = False):
@@ -794,6 +886,7 @@ class w_installer(QWidget):
 		path_string = None
 		res_paths = []
 
+		# get current value
 		if not replace:
 			try:
 				with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, (winreg.KEY_WOW64_64KEY + winreg.KEY_READ)) as key:
@@ -824,7 +917,16 @@ class w_installer(QWidget):
 			cmd = r'setx {0} "{1}"'.format(evar, path_string)
 			os.system(cmd)
 
+	def evar_prepare_unix(self, evar, values, replace = False):
+		# update evar list for unix
+		if evar in self.evar_list and not replace:
+			self.evar_list[evar] += values
+		else:
+			self.evar_list[evar] = values
+
 	def evar_setup_mac(self):
+		global PLUGIN_EVAR
+
 		plist = 'com.cerebro.tentaculo.plist'
 		fullpath = os.path.join(self.dir_source, plist)
 		destpath = os.path.join(self.dir_home, 'Library/LaunchAgents', plist)
@@ -835,22 +937,75 @@ class w_installer(QWidget):
 			os.system(cmd)
 
 		shutil.copy(fullpath, destpath)
+
+		# setup evar list
+		pe = "${{{}}}".format(PLUGIN_EVAR)
+
+		doc = ['<?xml version="1.0" encoding="UTF-8"?>\n',
+		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n',
+		'<plist version="1.0">\n',
+		'<dict>\n',
+		'  <key>Label</key>\n',
+		'  <string>my.startup</string>\n',	# 5
+		'  <key>ProgramArguments</key>\n',
+		'  <array>\n',
+		'    <string>sh</string>\n',
+		'    <string>-c</string>\n',
+		'    <string>\n',						# 10
+		'      launchctl setenv PYTHONPATH ${HOME}/cerebro:${PYTHONPATH}\n',
+		'    </string>\n',
+		'  </array>\n',
+		'  <key>RunAtLoad</key>\n',
+		'  <true/>\n',						# 15
+		'</dict>\n',
+		'</plist>\n']
+
+		with codecs.open(destpath, 'w', 'utf-8') as fh:
+			lines = []
+			for evar, val in self.evar_list.items():
+				line = 'launchctl setenv {0} {1}'.format(evar, ':'.join(val))
+				if evar.lower() == PLUGIN_EVAR.lower():
+					line += '"'
+				else:
+					line = '{0}:${{{1}}}'.format(line, evar).replace(PLUGIN_EVAR, pe)
+				lines.append(line)
+			doc[11] = "      {0}\n".format('; '.join(lines))
+			fh.writelines(doc)
+		
+		# set executable
 		cmd = 'chmod ugo-w "{0}"'.format(destpath)
 		os.system(cmd)
 		try:
 			cmd = 'launchctl unload "{0}"'.format(destpath)
 			os.system(cmd)
 		except Exception as err:
-			self.log.error(str(err))
+			self.log.error(str(err), exc_info=1)
 
 		cmd = 'launchctl load "{0}"'.format(destpath)
 		os.system(cmd)
 
 	def evar_setup_linux(self):
+		global PLUGIN_EVAR
+
 		plist = '.cerebro.tentaculo.lx'
 		fullpath = os.path.join(self.dir_source, plist)
 		destpath = os.path.join(self.dir_cfg, plist)
 		shutil.copy(fullpath, destpath)
+
+		# setup evar list
+		pe = "${}".format(PLUGIN_EVAR)
+
+		with codecs.open(destpath, 'w', 'utf-8') as fh:
+			fh.write("#!/bin/bash\n\n")
+			for evar, val in self.evar_list.items():
+				line = 'export {0}="{1}'.format(evar, ':'.join(val))
+				if evar.lower() == PLUGIN_EVAR.lower():
+					line += '"\n'
+				else:
+					line = '{0}:${1}"\n'.format(line, evar).replace(PLUGIN_EVAR, pe)
+				fh.write(line)
+		
+		# set executable
 		cmd = 'chmod u+x "{0}"'.format(destpath)
 		os.system(cmd)
 
@@ -1102,7 +1257,7 @@ class w_uninstaller(QWidget):
 				cmd = 'launchctl unload "{0}"'.format(destpath)
 				os.system(cmd)
 			except Exception as err:
-				self.log.error(str(err))
+				self.log.error(str(err), exc_info=1)
 
 			cmd = 'chmod u+w "{0}"'.format(destpath)
 			os.system(cmd)
@@ -1163,7 +1318,7 @@ class w_uninstaller(QWidget):
 				self.log.info("Plugin folder and config removed.")
 				cerebro_message("Cerebro Tentaculo uninstalled!")
 			except Exception as err:
-				self.log.error(str(err))
+				self.log.error(str(err), exc_info=1)
 				cerebro_message("Error occured!")
 
 	# WINDOW

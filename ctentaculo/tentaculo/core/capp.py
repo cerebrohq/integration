@@ -15,6 +15,13 @@ try:
 except ImportError:
 	pass
 
+# Disable ssl warnings
+try:
+	import requests.packages.urllib3 as urllib3
+	urllib3.disable_warnings()
+except:
+	pass
+
 # Host window handle
 APP_HANDLE = None
 
@@ -131,7 +138,7 @@ from tentaculo import Qt
 
 if HOST == C4D or HOST == BLENDER or HOST == STANDALONE:
 	if utils.PY3:
-		Qt.QtCore.QCoreApplication.addLibraryPath(os.path.join(utils.plugin_dir(), "libs3", utils.HOST_OS, "python3", "PyQt5", "plugins"))
+		Qt.QtCore.QCoreApplication.addLibraryPath(os.path.join(utils.plugin_dir(), "libs3", utils.HOST_OS, "python37" if utils.PY37 else "python3", "PyQt5", "plugins"))
 	if not Qt.QtCore.QCoreApplication.instance():
 		app = Qt.QtWidgets.QApplication(sys.argv)
 		app.setWindowIcon(Qt.QtGui.QIcon(utils.getResDir("icon.png")))

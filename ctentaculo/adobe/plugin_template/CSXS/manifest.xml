@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtensionManifest Version="7.0" ExtensionBundleId="ctentaculo" ExtensionBundleVersion="1.7.0" ExtensionBundleName="ctentaculo" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<ExtensionList>
+		<Extension Id="ctentaculo.actions" Version="1.0" />
+		<Extension Id="ctentaculo.main" Version="1.0" />
+	</ExtensionList>
+	<ExecutionEnvironment>
+		<HostList>
+			<Host Name="PHXS" Version="17.0" />
+			<Host Name="PHSP" Version="17.0" />
+			<Host Name="IDSN" Version="12.0" />
+			<Host Name="AEFT" Version="15" />
+			<Host Name="ILST" Version="20.0" />
+			<Host Name="FLPR" Version="18.0" />
+			<Host Name="PPRO" Version="12.0"/>
+		</HostList>
+		<LocaleList>
+			<Locale Code="All" />
+		</LocaleList>
+		<RequiredRuntimeList>
+			<RequiredRuntime Name="CSXS" Version="7.0" />
+		</RequiredRuntimeList>
+	</ExecutionEnvironment>
+	<DispatchInfoList>
+		<Extension Id="ctentaculo.actions">
+			<DispatchInfo >
+				<Resources>
+					<MainPath>./dist/Actions.html</MainPath>
+					<ScriptPath>./jsx/main.jsx</ScriptPath>
+					<CEFCommandLine>
+						<Parameter>--enable-nodejs</Parameter>
+						<Parameter>--mixed-context</Parameter>
+					</CEFCommandLine>
+				</Resources>
+				<Lifecycle>
+					<AutoVisible>true</AutoVisible>
+				</Lifecycle>
+				<UI>
+					<Type>Panel</Type>
+					<Menu>Cerebro</Menu>
+					<Geometry>
+						<MinSize>
+							<Width>230</Width>
+							<Height>450</Height>
+						</MinSize>
+						<Size>
+							<Width>230</Width>
+							<Height>450</Height>
+						</Size>
+						<MaxSize>
+							<Width>500</Width>
+							<Height>550</Height>
+						</MaxSize>
+					</Geometry>
+					<Icons>
+						<Icon Type="Normal">./icons/icon.png</Icon>
+						<Icon Type="RollOver">./icons/icon-rollover.png</Icon>
+						<Icon Type="Disabled">./icons/icon-disabled.png</Icon>
+						<Icon Type="DarkNormal">./icons/icon-dark.png</Icon>
+						<Icon Type="DarkRollOver">./icons/icon-dark-rollover.png</Icon>
+					</Icons>
+				</UI>
+			</DispatchInfo>
+		</Extension>
+		<Extension Id="ctentaculo.main">
+			<DispatchInfo >
+				<Resources>
+					<MainPath>./dist/Browser.html</MainPath>
+					<ScriptPath>./jsx/main.jsx</ScriptPath>
+					<CEFCommandLine>
+						<Parameter>--enable-nodejs</Parameter>
+						<Parameter>--mixed-context</Parameter>
+					</CEFCommandLine>
+				</Resources>
+				<Lifecycle>
+					<AutoVisible>true</AutoVisible>
+				</Lifecycle>
+				<UI>
+					<Type>Modeless</Type>
+					<Geometry>
+						<MinSize>
+							<Width>885</Width>
+							<Height>500</Height>
+						</MinSize>
+						<Size>
+							<Width>885</Width>
+							<Height>500</Height>
+						</Size>
+						<MaxSize>
+							<Width>1920</Width>
+							<Height>1080</Height>
+						</MaxSize>
+					</Geometry>
+					<Icons>
+						<Icon Type="Normal">./icons/iconNormal.png</Icon>
+						<Icon Type="RollOver">./icons/iconRollover.png</Icon>
+						<Icon Type="Disabled">./icons/iconDisabled.png</Icon>
+						<Icon Type="DarkNormal">./icons/iconDarkNormal.png</Icon>
+						<Icon Type="DarkRollOver">./icons/iconDarkRollover.png</Icon>
+					</Icons>
+				</UI>
+			</DispatchInfo>
+		</Extension>
+	</DispatchInfoList>
+</ExtensionManifest>

@@ -10,10 +10,11 @@ from tentaculo.core import capp, utils
 # logger
 # WARNING: This is SINGLETON
 class CLogger(object):
+
+	__slots__ = ('log')
+
 	# singleton
 	__instance = None
-
-	log = None
 
 	def __new__(cls, *args, **kwargs):
 		if not isinstance(cls.__instance, cls):
@@ -22,6 +23,7 @@ class CLogger(object):
 		return cls.__instance
 
 	def __call__(self):
+		self.log = None
 		self.init_logger()
 
 	def init_logger(self):
@@ -43,6 +45,7 @@ class CLogger(object):
 				self.log.setLevel(logging.DEBUG)
 			else:
 				self.log.setLevel(logging.INFO)
+				self.log.propagate = False
 
 			self.log.info('Start %s version %s', version.APP_NAME, version.APP_VERSION)
 			self.log.info('Application: %s', capp.HOST_NAME)

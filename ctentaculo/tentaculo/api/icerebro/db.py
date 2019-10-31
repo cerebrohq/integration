@@ -16,17 +16,31 @@ from tentaculo.core import jsonio, clogger, config, vfile
 from tentaculo.gui import wapp, wlogin
 
 from tentaculo.Qt.QtWidgets import QAction
+from tentaculo.Qt.QtCore import QObject, Signal
 
 from tentaculo.api.icerebro import cargo
 from tentaculo.api import menu
 
 CACHE_TIMEOUT = 60
+CACHE_TIMEOUT_RARE = 60 * 10
 
-default_address = 'db.cerebrohq.com:45432'
+# QObject helper class
+class DbHelper(QObject):
+	task_changed = Signal(str)
+
+	def change_task(self, task_id):
+		if task_id is not None:
+			self.task_changed.emit(str(task_id))
 
 # common db utility class
 # WARNING: This is SINGLETON
 class Db(object):
+
+	__slots__ = ('lock_cache', 'lock_execute', 'log', 'config', 'db', 'login_action', 'connected', 'forbid_client',
+			  'cargo', 'current_parent', 'allocated', 'tree', 'links', 'alltasks', 'unid_by_prjid', 'ts_allocated',
+			  'ts_browser', 'ts_links', 'current_acc', 'user_id', 'user_name', 'users', 'statuses', 'user_dir',
+			  'cfg', 'event_stop', 'thread', 'fman', 'tasks_requested', 'cache_status', 'object', '__weakref__')
+
 	# singleton
 	__instance = None
 
@@ -36,18 +50,28 @@ class Db(object):
 			cls.__instance()
 		return cls.__instance
 
+	def __del__(self):
+		self.event_stop.set()
+		self.object.deleteLater()
+		self.thread.join()
+
 	def __call__(self):
 		self.lock_cache = threading.RLock()
 		self.lock_execute = threading.Lock()
+		self.event_stop = threading.Event()
+		self.thread = threading.Thread(target=self.thread_load, args=())
 		self.log = clogger.CLogger().log
 		self.config = config.Config()
 		self.db = database.Database()
+		self.object = DbHelper()
 
 		self.login_action = QAction(None)
 		self.login_action.triggered.connect(self.bad_client)
 
 		self.load_config()
 		self.disconnect()
+
+		self.thread.start()
 
 	# full clear with 'disconnect'
 	def disconnect(self, forbid_client = False):
@@ -65,10 +89,59 @@ class Db(object):
 			self.links = {}
 			self.alltasks = {}
 			self.unid_by_prjid = {}
+			self.tasks_requested = []
+			self.cache_status = {}
 
 			self.ts_allocated = 0
 			self.ts_browser = 0
 			self.ts_links = 0
+
+	def thread_load(self):
+		from tentaculo.core import fmanager
+		self.fman = fmanager.FManager()
+
+		while not self.event_stop.is_set():
+			while True:
+				if self.event_stop.is_set(): break
+
+				with self.lock_cache:
+					if len(self.tasks_requested) == 0: break
+					task_id = self.tasks_requested.pop()
+					task = self.alltasks.get(task_id, {})
+					thumb_hash = task.get("thumb_hashes", None)
+					task_ind = task.get("indicator", "")
+				
+				task_changed = False
+				# Thumb
+				if thumb_hash is not None:
+					thumb = None
+					tmp = thumb_hash.split(',')
+					hashes = [tmp[x] if len(tmp) > x and len(tmp[x]) > 0 else None for x in range(6)]
+					hashes = hashes[0:2] + hashes[3:5]
+
+					for h in reversed(hashes):
+						thumb = self.cargo.file(h)
+						if thumb is not None:
+							break
+
+					if thumb is not None:
+						task_changed = True
+						with self.lock_cache:
+							if task_id in self.alltasks:
+								self.alltasks[task_id]["thumbnail"] = thumb
+				# Indicator
+				if task_ind is None:
+					indicator_color = self.fman.gui_processor(task, "indicator_task", None)
+					if indicator_color is not None and indicator_color[0] is not None:
+						task_changed = True
+						with self.lock_cache:
+							if task_id in self.alltasks:
+								self.alltasks[task_id]["indicator"] = indicator_color[0]
+				# Set task updated
+				if task_changed:
+					self.object.change_task(task_id)
+
+			self.event_stop.wait(1)
 
 	def clear_profile(self):
 		self.current_acc = None
@@ -171,8 +244,8 @@ class Db(object):
 		
 		acc = self.account()
 		
-		dbaddress = acc.get('address').split(':')
-		self.log.info('Connection address: %s', dbaddress)
+		connect_url = acc.get('url', '')
+		self.log.info('Connection URL: %s', connect_url if len(connect_url) else 'default')
 		try:
 			err = 3
 			if not self.forbid_client:
@@ -188,7 +261,7 @@ class Db(object):
 			if err != 0:
 				if self.cfg.get('autologin') == True and acc.get('psw'):
 					menu.start_splash()
-					self.db.connect(acc.get('login'), acc.get('psw'))
+					self.db.connect(acc.get('login'), acc.get('psw'), acc.get('url', ''))
 				else:
 					acc = self.login_to(acc)
 					if not acc:
@@ -196,7 +269,7 @@ class Db(object):
 
 		except Exception as err:
 			self.log.debug('EXCEPTION', exc_info=1)
-			wapp.error('Connection to {0} failed.\n Please check address, your login and password.'.format(dbaddress))
+			wapp.error('Connection failed. Please check your login and password.\nConnect URL: {0}'.format(connect_url if len(connect_url) else 'default'))
 			acc = self.login_to(acc)
 			if not acc:
 				return False
@@ -215,11 +288,12 @@ class Db(object):
 
 		acc = self.account()
 		
-		dbaddress = acc.get('address').split(':')
+		#dbaddress = acc.get('address').split(':')
+		connect_url = acc.get('url', '')
+		self.log.info('Connection URL: %s', connect_url if len(connect_url) else 'default')
 
 		try:
 			#self.db = database.Database(dbaddress[0], dbaddress[1])
-			self.log.info('Connection address: %s', dbaddress)
 			err = self.db.connect_from_cerebro_client()
 			if err == 0:
 				self.connected = True
@@ -245,19 +319,20 @@ class Db(object):
 
 	# private: login from dialog
 	def login_as(self, acc):
-		dbaddress = ''
+		connect_url = ''
 		try:
 			if not self.is_current_account(acc):
 				self.disconnect()
-				address = acc.get('address')
-				dbaddress = address.split(':')
+				connect_url = acc.get('url', '')
+				#address = acc.get('address')
+				#dbaddress = address.split(':')
 				#self.db = database.Database(dbaddress[0], dbaddress[1])
 
-			self.db.connect(acc.get('login'), acc.get('psw'))
+			self.db.connect(acc.get('login'), acc.get('psw'), acc.get('url', ''))
 			menu.start_splash()
 		except Exception as err:
 			self.log.debug('EXCEPTION', exc_info=1)
-			wapp.error('Connection to {0} on port {1} failed.\n Please check address, your login and password.'.format(dbaddress[0], dbaddress[1]))
+			wapp.error('Connection failed. Please check your login and password.\nConnect URL: {0}'.format(connect_url if len(connect_url) else 'default'))
 			return False
 			
 		return True
@@ -281,12 +356,12 @@ class Db(object):
 			acc.setdefault('psw', u'')
 			acc.setdefault('savepath', u'')
 
-		acc.setdefault('address', default_address)
+		acc.setdefault('url', '')
 
 		return acc
 
 	def is_current_account(self, acc):
-		return acc and self.current_acc and self.current_acc.get('address', '') == acc.get('address') and self.current_acc.get('id', '') == acc.get('id')
+		return acc and self.current_acc and self.current_acc.get('url', '') == acc.get('url') and self.current_acc.get('id', '') == acc.get('id')
 
 	def load_config(self):
 		self.log.debug('Loading connection config started...')
@@ -308,15 +383,10 @@ class Db(object):
 		
 
 		self.log.debug('Autologin: %s, Remember: %s, Lastlogin: %s', self.cfg.get('autologin'), self.cfg.get('remember'), self.cfg.get('lastlogin')) 
-		MAKE_REMOVE = None
-		#self.log.debug('REMOVE %s', self.cfg) 
 		self.log.debug('Loading connection config has been successfully.')
 
 	def save_config(self):
 		self.log.debug('Save connection config started...')
-
-		#self.log.debug('current acc %s', self.current_acc)
-		#self.log.debug('user_id %s', self.user_id)
 		
 		if self.current_acc and self.current_acc.get('id'):
 			accs = self.cfg.get('accounts')
@@ -383,10 +453,13 @@ class Db(object):
 	def set_parent(self, task_id = None):
 		if task_id is None:
 			task_id = self.task(self.current_parent)["parent"]
-			
-		task =  self.task(task_id)
 		
-		if task_id == 0 or (task is not None and task["is_folder"]):
+		if task_id == 0:
+			self.current_parent = task_id
+			return True
+
+		task = self.task(task_id)
+		if task is not None and task["is_folder"]:
 			self.current_parent = task_id
 			return True
 
@@ -397,7 +470,7 @@ class Db(object):
 
 	def children_tasks(self, parent_id):
 		task_list = None
-		if self.tree.get(parent_id, None) is None or time.time() - self.ts_browser > CACHE_TIMEOUT:
+		if self.tree.get(parent_id, None) is None or time.time() - self.ts_browser > CACHE_TIMEOUT_RARE:
 			self.execute(self.z_tasks, (parent_id,))
 
 		children = self.tree.get(parent_id, None)
@@ -408,7 +481,7 @@ class Db(object):
 
 	def linked_tasks(self, task_id):
 		task_list = None
-		if self.links.get(task_id, None) is None or time.time() - self.ts_links > CACHE_TIMEOUT:
+		if self.links.get(task_id, None) is None or time.time() - self.ts_links > CACHE_TIMEOUT_RARE:
 			self.execute(self.z_linked, (task_id,))
 
 		linked = self.links.get(task_id, None)
@@ -461,11 +534,11 @@ class Db(object):
 
 		return self.task(task_id)
 		
-	def task(self, task_id):
+	def task(self, task_id, runAsync = False):
 		if task_id is None: return None
 		
 		tsk = self.alltasks.get(task_id, None)
-		if tsk is None or time.time() - tsk["last_update"] > CACHE_TIMEOUT:
+		if not runAsync and (tsk is None or time.time() - tsk["last_update"] > CACHE_TIMEOUT):
 			self.execute(self.z_task, (task_id,))
 
 		return self.alltasks.get(task_id, None)
@@ -478,9 +551,9 @@ class Db(object):
 				if len(task["path_repr"]) == 0:
 					path = task["name"]
 				else:
-					path = task["path_repr"] + " > " + task["name"]
-		if len(path) > 50:
-			path = u"..." + path[-50:]
+					path = task["path"] + task["name"]
+		#if len(path) > 50:
+		#	path = u"..." + path[-50:]
 		return path
 	
 	# private: 
@@ -517,10 +590,14 @@ class Db(object):
 	def z_allocated_tasks(self, showComplete = False):
 		with self.lock_cache:
 			db_tasks = self.db.to_do_task_list(self.user_id, showComplete)
-			# Complete statuses
-			statuses_set = set([st[dbtypes.STATUS_DATA_ID] for st in self.statuses if cclib.has_flag(st[dbtypes.STATUS_DATA_FLAGS], dbtypes.STATUS_FLAG_WORK_STOPPED)])
 
-			tasks = [task for task in db_tasks if showComplete or task[dbtypes.TASK_DATA_CC_STATUS] not in statuses_set]
+			if len(self.config.status_list) > 0:
+				statuses_set = set([ st[dbtypes.STATUS_DATA_ID] for st in self.statuses if st[dbtypes.STATUS_DATA_NAME] is not None and st[dbtypes.STATUS_DATA_NAME].lower() in self.config.status_list ])
+				tasks = [ task for task in db_tasks if task[dbtypes.TASK_DATA_CC_STATUS] in statuses_set ]
+			else:
+				# Complete statuses
+				statuses_set = set([ st[dbtypes.STATUS_DATA_ID] for st in self.statuses if cclib.has_flag(st[dbtypes.STATUS_DATA_FLAGS], dbtypes.STATUS_FLAG_WORK_STOPPED) ])
+				tasks = [ task for task in db_tasks if showComplete or task[dbtypes.TASK_DATA_CC_STATUS] not in statuses_set ]
 
 			self.allocated = { task[dbtypes.TASK_DATA_ID] for task in tasks if task is not None }
 
@@ -537,9 +614,8 @@ class Db(object):
 
 	# private: 
 	def z_task_files(self, task_id):
+		if task_id is None: return None
 		with self.lock_cache:
-			if task_id is None: return None
-
 			files = {}
 			self.alltasks[task_id]["definition"] = ""
 			self.alltasks[task_id]["messages"] = []
@@ -549,14 +625,18 @@ class Db(object):
 			# Append local and publish files
 			conf = self.config.translate(self.alltasks[task_id])
 			fvers = vfile.VFile(conf)
-			last_version = None if not fvers.has_versions else fvers.versions[fvers.last_number]
 			publish, local = fvers.publish_path(), fvers.local_path()
 			local_versions = fvers.versionsAll.copy()
+			last_versions = {}
+			for filename, ver in local_versions.items():
+				if last_versions.get(ver[0], (-1, ''))[0] < ver[1]:
+					last_versions[ver[0]] = (ver[1], filename)
+			last_versions = [ f[1] for f in last_versions.values() ]
 
 			if publish is not None and os.path.exists(publish) and os.path.splitext(publish)[1] in capp.HOST_EXT:
 				file = {}
 				file["name"] = os.path.basename(publish)
-				file["path"] = os.path.normpath(publish)
+				file["path"] = utils.np(publish)
 				file["thumbnail"] = None
 				file["id"] = -1
 				file["version"] = None
@@ -569,7 +649,7 @@ class Db(object):
 			if local is not None and os.path.exists(local) and os.path.splitext(local)[1] in capp.HOST_EXT:
 				file = {}
 				file["name"] = os.path.basename(local)
-				file["path"] = os.path.normpath(local)
+				file["path"] = utils.np(local)
 				file["thumbnail"] = None
 				file["id"] = -2
 				file["version"] = self.config.version_for_file(file["path"])
@@ -617,6 +697,7 @@ class Db(object):
 				if f[dbtypes.ATTACHMENT_DATA_GROUP_ID] in link_files and f[dbtypes.ATTACHMENT_DATA_TAG] == dbtypes.ATTACHMENT_TAG_THUMB1:
 					link_files[f[dbtypes.ATTACHMENT_DATA_GROUP_ID]]["thumbs"].append(f[dbtypes.ATTACHMENT_DATA_HASH])
 
+			unique_paths = set()
 			for f in link_files.values():
 				file_thumb = None
 				for hash_db in reversed(f["thumbs"]):
@@ -626,7 +707,10 @@ class Db(object):
 
 				path = f["path"]
 				if os.path.splitext(path)[1] in capp.HOST_EXT:
-					path = self.config.redirect_path(path)
+					path = utils.np(self.config.redirect_path(path))
+					if path in unique_paths: continue
+					unique_paths.add(path)
+
 					filename = os.path.basename(path)
 					file = {}
 					file["name"] = filename
@@ -634,23 +718,24 @@ class Db(object):
 					file["thumbnail"] = file_thumb
 					file["id"] = f["id"]
 					file["version"] = fvers.file_version(path)
-					file["is_last_version"] = False if last_version is None else last_version == filename
+					file["is_last_version"] = filename in last_versions
 					file["date"] = f["date"]
 					file["task_id"] = task_id
-
-					if filename in local_versions: del local_versions[filename]
 
 					files[file["id"]] = file
 
 			for i, (filename, ver) in enumerate(local_versions.items()):
-				path = os.path.normpath(os.path.join(fvers.path_version, filename))
+				path = utils.np(os.path.join(fvers.path_version, filename))
+				if path in unique_paths: continue
+				unique_paths.add(path)
+
 				file = {}
 				file["name"] = filename
 				file["path"] = path
 				file["thumbnail"] = None
 				file["id"] = -(3 + i)
-				file["version"] = ver
-				file["is_last_version"] = False if last_version is None else last_version == path
+				file["version"] = ver[1]
+				file["is_last_version"] = filename in last_versions
 				file["date"] = datetime.datetime.fromtimestamp(os.path.getmtime(path))
 				file["task_id"] = task_id
 
@@ -680,7 +765,7 @@ class Db(object):
 			try:
 				self.db.add_attachment(new_message_id, cargo_service, ver_file, [ver_thumb] if ver_thumb is not None else [],  '', True)
 			except Exception as err:
-				self.log.error(str(err))
+				self.log.error(str(err), exc_info=1)
 
 		for fpath, thumbs in links.items():
 			self.db.add_attachment(new_message_id, cargo_service, fpath, thumbs,  '', True)
@@ -740,7 +825,7 @@ class Db(object):
 			
 			if status is not None:
 				self.db.task_set_status(task_id, status)
-				self.execute(self.z_allocated_tasks, (False,))
+				self.z_allocated_tasks(False)
 				return True
 
 		return False
@@ -766,20 +851,9 @@ class Db(object):
 			task = {}
 			# ID
 			task["id"] = int(t[dbtypes.TASK_DATA_ID])
-			# Thumb
-			thumb = None
-
-			if t[dbtypes.TASK_DATA_THUMBS] is not None:
-				tmp = t[dbtypes.TASK_DATA_THUMBS].split(',')
-				hashes = [tmp[x] if len(tmp) > x and len(tmp[x]) > 0 else None for x in range(6)]
-				hashes = hashes[0:2] + hashes[3:5]
-
-				for h in reversed(hashes):
-					thumb = self.cargo.file(h)
-					if thumb is not None:
-						break
-
-			task["thumbnail"] = thumb
+			# Thumb - moved to async thread
+			task["thumbnail"] = None
+			task["thumb_hashes"] = t[dbtypes.TASK_DATA_THUMBS]
 			# Name
 			task["name"] = utils.string_unicode(t[dbtypes.TASK_DATA_NAME])
 			# Path
@@ -792,6 +866,7 @@ class Db(object):
 			# Status
 			status_code = t[dbtypes.TASK_DATA_SELF_STATUS]
 			status_name = ""
+			status_xpm = None
 			status_icon = None
 			status_order = 0
 			for st in self.statuses:
@@ -800,13 +875,18 @@ class Db(object):
 						task["owned_user_id"] = 0
 						task["enabled_task"] = False
 					status_name = st[dbtypes.STATUS_DATA_NAME]
-					status_icon = st[dbtypes.STATUS_DATA_ICON]
+					status_xpm = st[dbtypes.STATUS_DATA_ICON]
 					status_order = int(st[dbtypes.STATUS_DATA_ORDER])
+					if len(st) > dbtypes.STATUS_DATA_ICON_HASH:
+						if st[dbtypes.STATUS_DATA_ICON_HASH] not in self.cache_status:
+							self.cache_status[st[dbtypes.STATUS_DATA_ICON_HASH]] = self.cargo.file(st[dbtypes.STATUS_DATA_ICON_HASH])
+						status_icon = self.cache_status[st[dbtypes.STATUS_DATA_ICON_HASH]]
 					break
 			if status_name is None: status_name = ""
 			task["status"] = utils.string_unicode(status_name)
 			task["status_id"] = int(status_code) if status_code is not None else status_code
-			task["status_icon"] = utils.string_byte(status_icon) if status_icon is not None else None
+			task["status_xpm"] = utils.string_byte(status_xpm) if status_xpm is not None else None
+			task["status_icon"] = status_icon
 			task["status_order"] = status_order
 			# Start
 			start = t[dbtypes.TASK_DATA_HUMAN_START]
@@ -845,7 +925,10 @@ class Db(object):
 			task["last_update"] = current_time
 			# Task order from db
 			task["order"] = int(t[dbtypes.TASK_DATA_ORDER])
+			# Custom color indicator
+			task["indicator"] = None
 
+			self.tasks_requested.append(task["id"])
 			self.alltasks[task["id"]] = task
 
 		return True

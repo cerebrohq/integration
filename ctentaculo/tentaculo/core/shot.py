@@ -35,18 +35,14 @@ if capp.HOST == capp.C4D:
 if capp.HOST == capp.BLENDER:
 	import bpy
 
+from tentaculo import Qt
+from tentaculo.Qt.QtGui import *
+from tentaculo.Qt.QtCore import *
+from tentaculo.Qt.QtWidgets import *
 
-try:
-	from PyQt5.QtCore import *
-	from PyQt5.QtGui import *
-	from PyQt5.QtWidgets import *
-except ImportError:
-	from tentaculo.Qt.QtGui import *
-	from tentaculo.Qt.QtCore import *
-	from tentaculo.Qt.QtWidgets import *
+class Shot(object):
 
-
-class Shot():
+	__slots__ = ('parent', 'img', 'thumb', 'thumbSize', 'fname')
 
 	def __init__(self, parent = None):
 		self.clear()
@@ -160,7 +156,7 @@ class Shot():
 										, 'blend_data': bpy.context.blend_data	# just to suppress PyContext warning, doesn't seem to have any effect
 										#, 'edit_text' : bpy.context.edit_text	# just to suppress PyContext warning, doesn't seem to have any effect
 										, 'region'    : None					# just to suppress PyContext warning, doesn't seem to have any effect
-										, 'scene'     : screen.scene
+										, 'scene'     : window.scene if utils.PY37 else screen.scene
 										, 'space'     : space
 										, 'screen'    : window.screen
 										, 'window'    : window					# current window, could also copy context
@@ -187,23 +183,12 @@ class Shot():
 		return self.img
 
 	def activeScreen(self):
+		
 		out_path = os.path.join(utils.tempdir(), "screenshot-{0}.png".format(time.strftime("%Y-%m-%d--%H-%M-%S")))
+				
+		sw = SnippingWidget(self.parent, out_path)
 
-		if capp.QT5:
-			screen = QApplication.primaryScreen()
-			window = self.parent.windowHandle()
-			if window is not None:
-				screen = window.screen()
-			if screen is not None:
-				sr = screen.availableGeometry()
-				pix = screen.grabWindow(QApplication.desktop().winId(), sr.x(), sr.y(), sr.width(), sr.height())
-				pix.save(out_path)
-		else:
-			sr = QApplication.desktop().availableGeometry(self.parent)
-			pix = QPixmap.grabWindow(QApplication.desktop().winId(), sr.x(), sr.y(), sr.width(), sr.height())
-			pix.save(out_path)
-
-		return out_path
+		return out_path if sw.exec_() == QDialog.Accepted else None
 
 	def clear(self):
 		self.img = None
@@ -255,3 +240,141 @@ def scale(imgpath = None, newwidth = 160):
 	newheight = newwidth/ratio
 	thumb = img.scaled(newwidth, newheight, aspectRatioMode = Qt.KeepAspectRatio, transformMode = Qt.SmoothTransformation)
 	return thumb
+
+
+class SnippingWidget(QDialog):
+
+	def __init__(self, parent, out_path):
+		super(SnippingWidget, self).__init__()
+		self.setWindowTitle("Tentaculo screenshot")
+		self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+		self.setAttribute(Qt.WA_TranslucentBackground, True)
+		self.setWindowOpacity(0.5)
+
+		self.QT5 = False
+		self.deffered = False
+
+		try:
+			self.screen = QApplication.primaryScreen()
+			self.QT5 = capp.QT5
+		except:
+			pass
+
+		self.parent = parent
+		self.out_path = out_path
+		self.sr = QApplication.desktop().geometry()
+		self.deffered = (self.sr.width() + self.sr.height()) > 6000
+		self.setGeometry(self.sr)
+
+		if self.deffered:
+			self.up_timer = QTimer(self)
+			self.up_timer.setInterval(20)
+			self.up_timer.setSingleShot(True)
+			self.up_timer.timeout.connect(self.update)
+
+		pal = self.palette()
+		pal.setColor(QPalette.Window, QColor("white"))
+		self.setPalette(pal)
+
+		if self.QT5:
+			self.screen = QApplication.primaryScreen()
+			window = self.parent.windowHandle() if hasattr(self.parent, "windowHandle") else None
+			if window is not None:
+				self.screen = window.screen()
+		#	if self.screen is not None:
+		#		self.sr = self.screen.availableGeometry()
+		#	self.sr = QApplication.desktop().geometry()
+		#else:
+		#	self.sr = QApplication.desktop().availableGeometry(self.parent)
+
+		self.begin = QPoint()
+		self.end = QPoint()
+
+	def capture(self):
+		fullscreen = True
+		if not self.begin.isNull() and self.begin != self.end:
+			fullscreen = False
+			x1 = min(self.begin.x(), self.end.x())
+			y1 = min(self.begin.y(), self.end.y())
+			x2 = max(self.begin.x(), self.end.x())
+			y2 = max(self.begin.y(), self.end.y())
+
+		self.setWindowOpacity(0.0)
+		if self.QT5:
+			if fullscreen:
+				pix = self.screen.grabWindow(QApplication.desktop().winId(), self.sr.x(), self.sr.y(), self.sr.width(), self.sr.height())
+			else:
+				pix = self.screen.grabWindow(QApplication.desktop().winId(), self.sr.x() + x1, self.sr.y() + y1, x2 - x1, y2 - y1)
+			pix.save(self.out_path)
+		else:
+			if fullscreen:
+				pix = QPixmap.grabWindow(QApplication.desktop().winId(), self.sr.x(), self.sr.y(), self.sr.width(), self.sr.height())
+			else:
+				pix = QPixmap.grabWindow(QApplication.desktop().winId(), self.sr.x() + x1, self.sr.y() + y1, x2 - x1, y2 - y1)
+			pix.save(self.out_path)
+
+		self.accept()
+
+	def paintEvent(self, event):
+		qp = QPainter(self)
+
+		rect = QRect(10, 10, 300, 50)
+
+		qp.begin(self)
+		qp.fillRect(qp.viewport(), Qt.white)
+
+		font = qp.font()
+		font.setPixelSize(18)
+		qp.setFont(font)
+		qp.setBrush(QColor("black"))
+		qp.setPen(Qt.NoPen)
+		qp.drawRect(rect)
+		qp.setPen(QPen(QColor("white"), 2))
+		qp.drawText(rect, Qt.AlignVCenter | Qt.AlignLeft, "ESC to cancel\nENTER to capture entire screen")
+
+		if not self.begin.isNull():
+			selection = QRect(self.begin, self.end)
+			qp.setPen(QPen(Qt.red, 2))
+			qp.setBrush(Qt.black)
+			qp.drawRect(selection)
+			qp.setCompositionMode(QPainter.CompositionMode_Clear)
+			qp.setPen(Qt.NoPen)
+			qp.drawRect(selection)
+
+		qp.end()
+
+	def keyPressEvent(self, event):
+		if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
+			self.begin = QPoint()
+			self.end = QPoint()
+			event.accept()
+			self.capture()
+		super(SnippingWidget, self).keyPressEvent(event)
+
+	def mousePressEvent(self, event):
+		self.begin = event.pos()
+		self.end = self.begin
+		self.update()
+
+	def mouseMoveEvent(self, event):
+		if not self.begin.isNull():
+			self.end = event.pos()
+			if self.deffered:
+				self.up_timer.start()
+			else:
+				self.update()
+
+	def mouseReleaseEvent(self, event):
+		self.capture()
+
+	def showEvent(self, event):
+		QApplication.setOverrideCursor(QCursor(Qt.CrossCursor))
+		super(SnippingWidget, self).showEvent(event)
+
+	def closeEvent(self, event):
+		QApplication.restoreOverrideCursor()
+		super(SnippingWidget, self).closeEvent(event)
+
+	def hideEvent(self, event):
+		QApplication.restoreOverrideCursor()
+		super(SnippingWidget, self).hideEvent(event)

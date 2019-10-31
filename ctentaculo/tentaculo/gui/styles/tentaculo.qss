@@ -190,6 +190,14 @@ QTableView#files::item:hover, QTableView#tasks::item:hover {
 	background-color: #83b4fc;
 }
 
+QTableView#files::item QLabel#folder-hover-hide, QTableView#tasks::item QLabel#folder-hover-hide {
+	background-image: url(@resDir/folder-overlay.png);
+}
+
+QTableView#files::item QLabel#folder-hover-hide:hover, QTableView#tasks::item QLabel#folder-hover-hide:hover {
+	background-image: url();
+}
+
 QTableView::item {
 	border: 0px;
 	outline: 0;
@@ -207,19 +215,19 @@ QTableView::item:focus {
 QScrollBar:vertical {
 	border: 0;
 	background: transparent;
-	width: 8px;
+	width: 12px;
 	margin: 0px;
 	padding: 0px 2px;
 }
 
 QTableView#tasks QScrollBar::handle:vertical {
 	background-color: @color_main_bg;
-	border-radius: 2px;
+	border-radius: 4px;
 }
 
 QTableView#files QScrollBar::handle:vertical, QTableView#attach QScrollBar::handle:vertical, QTextEdit QScrollBar::handle:vertical {
 	background-color: @color_dark_bg;
-	border-radius: 2px;
+	border-radius: 4px;
 }
 
 QScrollBar::add-line:vertical {
@@ -286,12 +294,12 @@ QPushButton {
 	font-family: @font_regular;
 	font-size: @font_size_big;
 	color: @color_text_active;
-    border: 0px transparent black;
+    border: 2px solid transparent;
     border-radius: 14px;
     background-color: @color_button_normal;
 	padding: 0px 20px;
     min-width: 60px;
-	min-height: 28px;
+	min-height: 26px;
 }
 
 QPushButton#settings {
@@ -312,7 +320,7 @@ QPushButton#login {
 	font-family: @font_regular;
 	font-size: @font_size_big;
 	color: @color_text_active;
-    border: 0;
+    border: 2px solid @color_button_normal;
     border-radius: 4px;
     background-color: @color_button_normal;
 	padding: 0px 10px;
@@ -332,6 +340,34 @@ QPushButton#login:pressed {
 	background-color: @color_text_active;
 	color: @color_button_down;
 	border: 0;
+}
+
+QPushButton#path {
+	min-height: 18px;
+	min-width: 14px;
+	background-color: transparent;
+	border: 1px solid transparent;
+	outline: 0;
+	border-radius: 4px;
+	margin: 0;
+	padding: 0px 2px;
+	color: @color_text_passive;
+	font-family: @font_regular;
+	font-size: @font_size_small;
+	text-align: left;
+}
+
+QPushButton#path:hover {
+	color: @color_text_active;
+	border: 1px solid @color_text_passive;
+	border-radius: 4px;
+}
+
+QPushButton#path:pressed {
+	color: @color_text_active;
+	border: 1px solid @color_text_active;
+	background-color: @color_button_normal;
+	border-radius: 4px;
 }
 
 QPushButton#browseUp {
@@ -359,12 +395,12 @@ QPushButton#small {
 	font-family: @font_regular;
 	font-size: @font_size_small;
 	color: @color_text_active;
-    border: 0px transparent black;
+    border: 2px solid transparent;
     border-radius: 10px;
     background-color: @color_button_normal;
 	padding: 0px 10px 0px 10px;
     min-width: 60px;
-	min-height: 20px;
+	min-height: 18px;
 }
 
 QPushButton#dark {
@@ -399,7 +435,6 @@ QPushButton#dark:hover, QPushButton#smallDark:hover {
 QPushButton:pressed, QPushButton#small:pressed {
     background-color: @color_text_active;
 	color: @color_button_down;
-	border: 0;
 }
 
 QPushButton:hover, QPushButton#small:hover {
@@ -499,6 +534,12 @@ QToolButton#more:disabled {
 /*
 	CHECKBOX
 */
+
+QCheckBox {
+	color: @color_text_active;
+	font-family: @font_regular;
+	font-size: @font_size_small;
+}
 
 QCheckBox#login2 {
 	background: transparent;

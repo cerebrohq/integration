@@ -43,11 +43,9 @@ class TaskHeader(QFrame):
 		self.lb_taskName = QLabel(self)
 		self.lb_taskName.setObjectName("header")
 
-		horizontalSpacer_3 = QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
-
 		horizontalLayout_3.addWidget(self.lb_taskLock)
 		horizontalLayout_3.addWidget(self.lb_taskName)
-		horizontalLayout_3.addItem(horizontalSpacer_3)
+		horizontalLayout_3.addItem(QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
 
 		horizontalLayout_4 = QHBoxLayout()
 		horizontalLayout_4.setContentsMargins(0, 0, 0, 0)
@@ -91,25 +89,21 @@ class TaskHeader(QFrame):
 		self.lb_taskUser = QLabel(frame)
 		self.lb_taskUser.setObjectName("active")
 
-		horizontalSpacer = QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
-
 		horizontalLayout_2.addWidget(label)
 		horizontalLayout_2.addWidget(self.lb_taskStatusIcon)
 		horizontalLayout_2.addWidget(self.lb_taskStatus)
 		horizontalLayout_2.addWidget(self.lb_taskUser)
-		horizontalLayout_2.addItem(horizontalSpacer)
+		horizontalLayout_2.addItem(QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
 
 		label_2 = QLabel("DEADLINE: ", self)
 
 		self.lb_taskDeadline = QLabel("", self)
 		self.lb_taskDeadline.setObjectName("active")
 
-		horizontalSpacer_2 = QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
-
 		horizontalLayout.addWidget(frame)
 		horizontalLayout.addWidget(label_2)
 		horizontalLayout.addWidget(self.lb_taskDeadline)
-		horizontalLayout.addItem(horizontalSpacer_2)
+		horizontalLayout.addItem(QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
 
 		verticalLayout.addLayout(horizontalLayout_3)
 		verticalLayout.addLayout(horizontalLayout_4)
@@ -133,12 +127,18 @@ class TaskHeader(QFrame):
 		self.lb_taskLock.setVisible(not task["enabled_task"])
 		self.lb_taskName.setEnabled(task["enabled_task"])
 
-		self.lb_taskName.setText(task["name"]) #
+		self.lb_taskName.setText(task["name"])
 		self.lb_taskPath.setText(task["path_repr"])
 		self.lb_taskStatus.setText(task["status"])
 		self.lb_taskUser.setText(u": {0}".format(task["uname"]) if task["owned_user_id"] is not None else "")
+
 		icon = QPixmap()
-		icon.loadFromData(task["status_icon"], "XPM")
+		if task["status_icon"] is not None and len(task["status_icon"]):
+			icon = QIcon(task["status_icon"]).pixmap(QSize(16, 16))
+		elif task["status_xpm"] is not None and len(task["status_xpm"]):
+			icon.loadFromData(task["status_xpm"], "XPM")
+			icon = icon.scaled(QSize(16, 16), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
 		self.lb_taskStatusIcon.setPixmap(icon)
 		text = task["end"].strftime("%d %B %Y %H:%M")
 		if not utils.PY3: text = text.decode(locale.getpreferredencoding())

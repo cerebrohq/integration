@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import os, time, datetime
 
-from tentaculo.core import capp, shot, vfile, config, clogger, fmanager, utils
+from tentaculo.core import capp, shot, vfile, config, clogger, fmanager, utils, jsonio
 from tentaculo.api.icerebro import db
 from tentaculo.gui import style, wapp
 
@@ -24,6 +24,8 @@ class w_createReport(QWidget):
 	hashtags = []
 	attachments = {}
 
+	state_file = "ui_sendreport.json"
+
 	def __init__(self, taskid = None, to_publish = False, parent = None):
 		super(self.__class__, self).__init__(parent = parent)
 		self.setWindowFlags(Qt.Window)
@@ -42,6 +44,16 @@ class w_createReport(QWidget):
 		elif event.type() == QEvent.WindowActivate:
 			capp.focus_in()
 		return super(self.__class__, self).event(event)
+
+	def state_save(self):
+		state = {}
+		state["current_version"] = self.cb_version.isChecked()
+		jsonio.write(os.path.join(utils.configdir(), self.state_file), state)
+
+	def state_load(self):
+		state = jsonio.read(os.path.join(utils.configdir(), self.state_file))
+		if state is not None and len(state) > 0:
+			self.cb_version.setChecked(state["current_version"])
 
 	def initStyle(self):
 		styler = style.Styler()
@@ -76,7 +88,7 @@ class w_createReport(QWidget):
 					mins = td.seconds // 60
 					if mins % 5 > 0:
 						mins = mins // 5 * 5 + 5
-					self.cb_time.setEditText("{0}{1}".format(str(mins // 60).zfill(2), str(mins).zfill(2)))
+					self.cb_time.setEditText("{0}{1}".format(str(mins // 60).zfill(2), str(mins % 60).zfill(2)))
 			# Set file task
 			if self.task_id is None:
 				self.task_id = self.config.task_for_file(file_name)
@@ -86,6 +98,7 @@ class w_createReport(QWidget):
 
 		self.taskSet(self.task_id)
 		self.screenTake()
+		self.state_load()
 		self.log.info("Report task selected: %s", self.task_id)
 
 	def taskSet(self, task_id):
@@ -117,17 +130,21 @@ class w_createReport(QWidget):
 				self.updateStatusList()
 
 	def update_version(self, save_current = False):
-		self.cb_taskFile.setEnabled(not save_current)
+		if self.to_publish:
+			self.cb_taskFile.setEnabled(not save_current)
 		
 		if not self.fvers.is_empty:
-			ver = (self.fvers.current_version if save_current else self.fvers.next_version) if self.fvers.next_version_path() is not None else self.fvers.publish
+			ver = (self.fvers.current_version if (self.to_publish and save_current) else self.fvers.next_version) if self.fvers.next_version_path() is not None else self.fvers.publish
 			self.le_taskFile.setText(ver[len(self.fvers.base_name):])
 			if self.cb_taskFile.findText(self.fvers.base_name) == -1 and len(self.fvers.base_name) > 0:
 				self.cb_taskFile.addItem(self.fvers.base_name)
-			if capp.QT5:
-				self.cb_taskFile.setCurrentText(self.fvers.base_name)
-			else:
-				self.cb_taskFile.setEditText(self.fvers.base_name)
+			if len(self.fvers.base_name) > 0:
+				if capp.QT5:
+					self.cb_taskFile.setCurrentText(self.fvers.base_name)
+				else:
+					self.cb_taskFile.setEditText(self.fvers.base_name)
+			elif self.cb_taskFile.count() > 0:
+				self.cb_taskFile.setCurrentIndex(0)
 		else:
 			self.le_taskFile.clear()
 
@@ -173,8 +190,12 @@ class w_createReport(QWidget):
 		self.tableWidget.clear()
 		self.tableWidget.setRowCount(len(self.attachments))
 		for i, fpath in enumerate(self.attachments):
-			self.tableWidget.setItem(i, 0, QTableWidgetItem("{0}".format(u"LINK" if self.attachments[fpath] else u"ATTACH")))
-			self.tableWidget.setItem(i, 1, QTableWidgetItem(fpath))
+			itmType = QTableWidgetItem("{0}".format(u"LINK" if self.attachments[fpath] else u"ATTACH"))
+			itmPath = QTableWidgetItem(fpath)
+			itmType.setFlags(itmType.flags() & ~Qt.ItemIsEditable)
+			itmPath.setFlags(itmPath.flags() & ~Qt.ItemIsEditable)
+			self.tableWidget.setItem(i, 0, itmType)
+			self.tableWidget.setItem(i, 1, itmPath)
 
 	def __popupAt(self, pos):
 		index = self.tableWidget.indexAt(pos)
@@ -185,7 +206,7 @@ class w_createReport(QWidget):
 		styler.initStyle(menu)
 
 		acts = []
-		menu_options = ["Delete", "Change type"]
+		menu_options = ["Delete", "Change type", "Show in Explorer"]
 		for opt in menu_options:
 			if opt is None:
 				menu.addSeparator()
@@ -201,6 +222,8 @@ class w_createReport(QWidget):
 			elif ind == 1:
 				self.attachments[item] = not self.attachments[item]
 				self.update_files()
+			elif ind == 2:
+				utils.show_dir(item)
 
 		except ValueError:
 			pass
@@ -257,15 +280,16 @@ class w_createReport(QWidget):
 			self.conn.refresh_task(self.task_id)
 			if res: self.stop()
 		except Exception as err:
+			self.log.error('EXCEPTION', exc_info=1)
 			wapp.error(utils.error_unicode(err))
 		return res
 
 	def addScreenshot(self):
 		self.hide()
-		time.sleep(0.2)
+		#time.sleep(0.2)
 		imgpath = self.shot.activeScreen()
 		self.show()
-		if (os.path.exists(imgpath)):
+		if imgpath is not None and os.path.exists(imgpath):
 			self.attachments[imgpath] = False
 			self.update_files()
 
@@ -337,6 +361,7 @@ class w_createReport(QWidget):
 
 		self.lb_taskName = QLabel(frame_2)
 		self.lb_taskName.setObjectName("header")
+		self.lb_taskName.setMinimumWidth(100)
 
 		horizontalLayout = QHBoxLayout()
 		horizontalLayout.setSpacing(0)
@@ -345,14 +370,12 @@ class w_createReport(QWidget):
 		self.lb_taskPath = QLabel(frame_2)
 		self.lb_taskPath.setObjectName("active")
 
-		horizontalSpacer = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
-
 		pushButton = QPushButton("Choose another task", frame_2)
 		pushButton.clicked.connect(self.openProjectsBrowser)
 		pushButton.setObjectName("small")
 
 		horizontalLayout.addWidget(self.lb_taskPath)
-		horizontalLayout.addItem(horizontalSpacer)
+		horizontalLayout.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
 		horizontalLayout.addWidget(pushButton)
 
 		verticalLayout_2.addWidget(self.lb_taskName)
@@ -513,11 +536,9 @@ class w_createReport(QWidget):
 		view = QListView(self.cb_status)
 		self.cb_status.setView(view)
 
-		horizontalSpacer_3 = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
-
 		horizontalLayout_3.addWidget(label_9)
 		horizontalLayout_3.addWidget(self.cb_status)
-		horizontalLayout_3.addItem(horizontalSpacer_3)
+		horizontalLayout_3.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
 
 		horizontalLayout_4 = QHBoxLayout()
 		horizontalLayout_4.setSpacing(10)
@@ -536,11 +557,9 @@ class w_createReport(QWidget):
 		self.cb_time.setEditable(True)
 		self.cb_time.lineEdit().setInputMask("00\h 00\m")
 
-		horizontalSpacer_2 = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
-
 		horizontalLayout_4.addWidget(label_10)
 		horizontalLayout_4.addWidget(self.cb_time)
-		horizontalLayout_4.addItem(horizontalSpacer_2)
+		horizontalLayout_4.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
 
 		verticalLayout_5.addWidget(label_8)
 		verticalLayout_5.addWidget(self.te_report)
@@ -562,8 +581,6 @@ class w_createReport(QWidget):
 		horizontalLayout_5.setSpacing(20)
 		horizontalLayout_5.setContentsMargins(20, 10, 20, 10)
 
-		horizontalSpacer_4 = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
-
 		self.pb_publish = QPushButton("Publish", frame_5)
 		self.pb_publish.clicked.connect(self.sendReport)
 
@@ -575,7 +592,7 @@ class w_createReport(QWidget):
 		self.cb_version.setChecked(False)
 		self.cb_version.toggled.connect(self.update_version)
 
-		horizontalLayout_5.addItem(horizontalSpacer_4)
+		horizontalLayout_5.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
 		horizontalLayout_5.addWidget(self.cb_version)
 		horizontalLayout_5.addWidget(self.pb_publish)
 		horizontalLayout_5.addWidget(self.pb_cancel)
@@ -595,5 +612,7 @@ class w_createReport(QWidget):
 		self.close()
 
 	def closeEvent(self, event):
+		self.hide()
+		self.state_save()
 		self.close()
 
